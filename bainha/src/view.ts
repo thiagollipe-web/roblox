@@ -673,8 +673,10 @@ export function createView(container: HTMLElement) {
     const shadowX = Math.round(p.x / texel) * texel, shadowZ = Math.round(p.z / texel) * texel;
     const shadowY = Math.round(followY / texel) * texel;
     light.position.set(shadowX-12,shadowY+23,shadowZ-8);light.target.position.set(shadowX,shadowY,shadowZ+8);
+    // A DPR change clears the canvas, so decide quality before drawing this frame.
+    observeFrame(options);
     renderer.render(scene,camera);
-    renderedFrames++; observeFrame(options);
+    renderedFrames++;
   }
   return {render,resize,renderer,prepare,setQuality,diagnostics};
 }

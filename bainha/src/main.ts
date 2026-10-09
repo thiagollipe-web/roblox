@@ -23,6 +23,7 @@ async function boot() {
   const touchMode = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
   const coinTotal = COLLECTIBLES.filter(item => !item.special).length;
   const specialTotal = COLLECTIBLES.filter(item => item.special).length;
+  let ready = false, contextLost = false;
   let started = false, paused = false, aiming = false, jumpQueued = false;
   let elapsed = 0, accumulator = 0, last = performance.now(), frames = 0;
   let toastTime = 0, lastMessage = '', shownWin = false;
@@ -34,43 +35,78 @@ async function boot() {
     id: number; x: number; y: number; time: number;
     kind: 'pending' | 'move' | 'aim'; cancel: boolean; dy: number; jumpLatched: boolean;
   } | null = null;
-  let padJump = false, padTrigger = false, padPause = false;
+  let padJump = false, padTrigger = false, padPause = false, padAimArmed = false;
   let lastTouchX = 0, lastTouchZ = 0, coastUntil = 0;
 
+  function activeModal() {
+    if (contextLost) return $('error');
+    if (paused) return $('pause-menu');
+    if (game.state.won) return $('win-menu');
+    return null;
+  }
+  function updateInputSurface() {
+    const blocked = !ready || !started || paused || game.state.won || contextLost;
+    $('hud').inert = blocked; $('controls').inert = blocked;
+    $('menu').inert = contextLost;
+    $('pause-menu').inert = contextLost; $('win-menu').inert = contextLost;
+  }
+  function cancelAim() {
+    aiming = false; keys.delete('KeyE'); padAimArmed = false;
+    if (pointer?.kind === 'aim') {
+      pointer = null; stickX = stickZ = 0; coastUntil = 0;
+      $('joystick-knob').style.transform = '';
+    }
+    show('cancel-indicator', false);
+  }
   function clearInput() {
     keys.clear(); stickX = stickZ = 0; aiming = false; pointer = null;
-    jumpQueued = false; coastUntil = 0; padTrigger = false; padJump = false;
+    jumpQueued = false; coastUntil = 0; padAimArmed = false;
+    // Held buttons are not fresh presses when returning from a menu.
+    const pad = navigator.getGamepads?.().find(p => p?.connected);
+    padTrigger = !!pad?.buttons[7]?.pressed; padJump = !!pad?.buttons[0]?.pressed;
     $('joystick-knob').style.transform = '';
     show('cancel-indicator', false);
   }
   function setPause(value: boolean) {
-    if (!started || game.state.won) return;
+    if (!ready || !started || game.state.won || contextLost) return;
     paused = value; clearInput(); accumulator = 0;
     motion.reset(game.state.position); renderDirty = true;
     show('pause-menu', value); show('controls', !value);
+    updateInputSurface();
+    $(value ? 'resume' : 'scene').focus({ preventScroll: true });
   }
   function start() {
+    if (!ready || contextLost) return;
     game.reset(); clearInput(); started = true; paused = false; shownWin = false;
     motion.reset(game.state.position); renderDirty = true;
     elapsed = 0; accumulator = 0; lastMessage = ''; toastTime = 0;
     show('menu', false); show('win-menu', false); show('pause-menu', false);
     show('hud', true); show('controls', true);
+    updateInputSurface(); $('scene').focus({ preventScroll: true });
   }
   function act() {
-    if (started && !paused && !game.state.won) {
+    if (ready && started && !paused && !game.state.won && !contextLost) {
       game.act(); motion.reset(game.state.position);
     }
   }
-  function jump() { if (started && !paused && !game.state.won) jumpQueued = true; }
+  function jump() { if (ready && started && !paused && !game.state.won && !contextLost) jumpQueued = true; }
+  function bindPlayButton(id: string, press: () => void) {
+    // Secondary touches do not produce a compatibility click in every browser.
+    // React on press for gameplay, and retain native keyboard/assistive clicks.
+    $(id).addEventListener('pointerdown', event => {
+      if (event.button !== 0) return;
+      event.preventDefault(); press();
+    });
+    $(id).addEventListener('click', event => { if (event.detail === 0) press(); });
+  }
   $('start').addEventListener('click', start);
   $('again').addEventListener('click', start);
   $('restart').addEventListener('click', start);
   $('resume').addEventListener('click', () => setPause(false));
-  $('pause').addEventListener('click', () => setPause(!paused));
-  $('help').addEventListener('click', () => setPause(true));
-  $('action').addEventListener('click', act);
-  $('jump').addEventListener('pointerdown', event => { event.preventDefault(); jump(); });
-  $('jump').addEventListener('click', event => { if (event.detail === 0) jump(); });
+  bindPlayButton('pause', () => setPause(!paused));
+  bindPlayButton('help', () => setPause(true));
+  bindPlayButton('action', act);
+  bindPlayButton('jump', jump);
   $('graphics-quality').addEventListener('change', event => {
     const value = (event.target as HTMLSelectElement).value;
     if (value === 'auto' || value === 'high' || value === 'low') {
@@ -78,16 +114,35 @@ async function boot() {
     }
   });
   addEventListener('keydown', event => {
+    const modal = activeModal();
+    if (event.code === 'Tab' && modal) {
+      const controls = [...modal.querySelectorAll<HTMLElement>('button:not(:disabled), select:not(:disabled)')]
+        .filter(element => element.getClientRects().length > 0);
+      const first = controls[0], last = controls[controls.length - 1];
+      if (first && (event.shiftKey ? document.activeElement === first : document.activeElement === last)) {
+        event.preventDefault(); (event.shiftKey ? last : first).focus();
+      }
+      return;
+    }
+    if (!ready || contextLost) return;
     if (event.target instanceof HTMLSelectElement) return;
     if (event.code === 'Escape') {
-      if (aiming) { aiming = false; keys.delete('KeyE'); }
+      event.preventDefault();
+      if (event.repeat) return;
+      if (aiming) cancelAim();
       else setPause(!paused);
       return;
     }
     if (!started || paused || game.state.won) return;
+    // Preserve native keyboard activation of visible UI buttons.
+    if (event.target instanceof HTMLElement && event.target.closest('button')
+      && (event.code === 'Space' || event.code === 'Enter')) return;
     if (['KeyW','KeyA','KeyS','KeyD','Space','KeyE','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.code)) event.preventDefault();
     if (event.code === 'Space' && !event.repeat) jump();
-    if (event.code === 'KeyE') aiming = true;
+    if (event.code === 'KeyE') {
+      if (!event.repeat) { aiming = true; keys.add(event.code); }
+      return;
+    }
     keys.add(event.code);
   });
   addEventListener('keyup', event => {
@@ -96,7 +151,7 @@ async function boot() {
   });
   const zone = $('touch-zone');
   zone.addEventListener('pointerdown', event => {
-    if (!started || paused || pointer || game.state.won) return;
+    if (!ready || !started || paused || pointer || game.state.won || contextLost) return;
     event.preventDefault(); zone.setPointerCapture(event.pointerId);
     pointer = { id: event.pointerId, x: event.clientX, y: event.clientY,
       time: performance.now(), kind: 'pending', cancel: false, dy: 0, jumpLatched: false };
@@ -140,14 +195,17 @@ async function boot() {
     last = performance.now(); accumulator = 0;
   });
   view.renderer.domElement.addEventListener('webglcontextlost', event => {
-    event.preventDefault(); setPause(true); show('loading', false); show('error', true);
+    event.preventDefault(); setPause(true); contextLost = true; clearInput();
+    show('loading', false); show('error', true); updateInputSurface();
     $('error-message').textContent = 'O navegador interrompeu os gráficos. Recarregue a página para voltar à colina.';
+    $('error').querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true });
   });
   view.renderer.domElement.addEventListener('webglcontextrestored', () => location.reload());
   addEventListener('resize', () => { view.resize(); renderDirty = true; }); view.resize();
   await view.prepare();
   last = performance.now();
   if (!$('error').hidden) return;
+  ready = true;
   show('loading', false); show('menu', true);
   const indicator = $('ribbon-state'), objective = $('objective'), progress = $('progress');
   const actionButton = $('action'), coinCount = $('coin-count'), specialCount = $('special-count');
@@ -176,25 +234,25 @@ async function boot() {
     if (keys.has('KeyD') || keys.has('ArrowRight')) x += 1;
     if (!pointer && now < coastUntil) { x += lastTouchX; z += lastTouchZ; }
     const pad = navigator.getGamepads?.().find(p => p?.connected);
-    if (pad && started && !game.state.won) {
+    if (pad && started && !game.state.won && !contextLost) {
       const pressedPause = !!pad.buttons[9]?.pressed;
+      const pressedJump = !!pad.buttons[0]?.pressed, pressedTrigger = !!pad.buttons[7]?.pressed;
       if (pressedPause && !padPause) setPause(!paused);
       padPause = pressedPause;
       if (!paused) {
         const deadzone = (n: number) => Math.abs(n) > .18 ? n : 0;
         x += deadzone(pad.axes[0] || 0); z -= deadzone(pad.axes[1] || 0);
-        const pressedJump = !!pad.buttons[0]?.pressed, pressedTrigger = !!pad.buttons[7]?.pressed;
         if (pressedJump && !padJump) jump();
-        if (pressedTrigger && !padTrigger) aiming = true;
-        if (!pressedTrigger && padTrigger) { aiming = false; act(); }
-        padJump = pressedJump; padTrigger = pressedTrigger;
+        if (pressedTrigger && !padTrigger) { aiming = true; padAimArmed = true; }
+        if (!pressedTrigger && padTrigger && padAimArmed) { padAimArmed = false; aiming = false; act(); }
       }
+      padJump = pressedJump; padTrigger = pressedTrigger;
     } else {
-      if (padTrigger) aiming = false;
-      padJump = false; padTrigger = false; padPause = false;
+      if (padAimArmed) cancelAim();
+      padJump = false; padTrigger = false; padPause = false; padAimArmed = false;
     }
     const length = Math.hypot(x, z); if (length > 1) { x /= length; z /= length; }
-    if (started && !paused && !game.state.won) {
+    if (started && !paused && !game.state.won && !contextLost) {
       elapsed += dt; accumulator += dt * (aiming ? .25 : 1);
       while (accumulator >= fixedStep) {
         motion.capture(game.state.position);
@@ -242,9 +300,10 @@ async function boot() {
     toastTime = Math.max(0, toastTime - dt); show('toast', toastTime > 0 && started && !paused && !s.won);
     if (s.won && !shownWin) {
       shownWin = true; clearInput(); show('win-menu', true); show('controls', false); show('hint', false);
+      updateInputSurface(); $('again').focus({ preventScroll: true });
       $('win-stats').textContent = `${s.coins}/${coinTotal} carretéis · ${s.specials}/${specialTotal} bobinas azuis\n${Math.floor(elapsed / 60)}min ${Math.floor(elapsed % 60).toString().padStart(2, '0')}s · ${s.deaths} ${s.deaths === 1 ? 'queda' : 'quedas'}`;
     }
-    if (!paused || renderDirty) {
+    if (!contextLost && (!paused || renderDirty)) {
       const position = motion.sample(s.position, paused || s.won ? 1 : accumulator / fixedStep);
       view.render(s, { dt: paused ? 0 : dt, elapsed, started, aiming, position, frameMs });
       renderDirty = false;
@@ -261,5 +320,6 @@ boot().catch(error => {
     element.hidden = false;
     const message = document.getElementById('error-message');
     if (message) message.textContent = 'Use um navegador com WebGL 2 e WebAssembly ativados e recarregue a página.';
+    element.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true });
   }
 });

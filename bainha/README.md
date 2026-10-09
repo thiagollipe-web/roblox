@@ -85,6 +85,14 @@ python3 tests/controls-animation-smoke.py
 
 Esse teste projeta o deslocamento pela câmera real, verifica setas/WASD e arrastos laterais e captura poses de repouso, corrida e salto. A cobertura de gamepad usa uma entrada emulada, sem substituir o teste em um controle físico.
 
+Para verificar cancelamento de comandos, repetição de teclas, botões com dois dedos, foco dos menus e recuperação após perda do contexto gráfico:
+
+```sh
+python3 tests/input-recovery-smoke.py
+```
+
+Esse teste requer a versão servida por HTTP para conferir o recarregamento real após a restauração de WebGL. Use `BAINHA_URL` para indicar outro endereço e `BAINHA_ARTIFACTS` para salvar as evidências. O gamepad é emulado; a perda e a restauração gráfica usam a extensão nativa `WEBGL_lose_context`.
+
 Para verificar o arquivo único com a rede desabilitada:
 
 ```sh

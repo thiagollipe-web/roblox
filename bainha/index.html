@@ -10,14 +10,14 @@
   </head>
   <body>
     <div id="app">
-      <div id="scene" aria-label="Colina das Costuras, mundo tridimensional interativo"></div>
+      <div id="scene" tabindex="-1" aria-label="Colina das Costuras, mundo tridimensional interativo"></div>
 
       <div id="loading" role="status" aria-live="polite">
         <span class="loading-mark" aria-hidden="true"></span>
         <span>Plantando uma aventura…</span>
       </div>
 
-      <main id="menu" class="screen intro-screen" aria-labelledby="game-title">
+      <main id="menu" class="screen intro-screen" aria-labelledby="game-title" hidden>
         <div class="intro-topline">
           <span class="world-badge"><span aria-hidden="true">✦</span> UMA AVENTURA NAS ALTURAS</span>
           <span class="edition">3D · WEBGL</span>
@@ -76,7 +76,7 @@
       </div>
       <div id="cancel-indicator" hidden>↓ Deslize para cancelar</div>
 
-      <section id="pause-menu" class="screen modal-screen" aria-labelledby="pause-title" hidden>
+      <section id="pause-menu" class="screen modal-screen" role="dialog" aria-modal="true" aria-labelledby="pause-title" hidden>
         <div class="modal-card">
           <p class="eyebrow">COLINA DAS COSTURAS</p>
           <h2 id="pause-title">Uma pausa!</h2>
@@ -86,7 +86,7 @@
             <div><span>Saltar</span><kbd>ESPAÇO</kbd></div>
             <div><span>Costurar / tensionar / liberar</span><kbd>E</kbd></div>
             <div><span>Pausar</span><kbd>ESC</kbd></div>
-            <p>Controle: direcional para mover · A para saltar · RT para o fio.</p>
+            <p>Controle: analógico esquerdo para mover · A para saltar · RT para o fio.</p>
           </div>
           <div class="control-guide touch-copy">
             <div><span>Mover</span><span>Arraste com o polegar</span></div>
@@ -109,7 +109,7 @@
         </div>
       </section>
 
-      <section id="win-menu" class="screen modal-screen victory-screen" aria-labelledby="win-title" hidden>
+      <section id="win-menu" class="screen modal-screen victory-screen" role="dialog" aria-modal="true" aria-labelledby="win-title" hidden>
         <div class="modal-card">
           <span class="victory-symbol" aria-hidden="true">✦</span>
           <p class="eyebrow">COLINA DAS COSTURAS</p>
@@ -121,7 +121,7 @@
         </div>
       </section>
 
-      <div id="error" class="screen modal-screen" role="alert" hidden><div class="modal-card"><p class="eyebrow">OPS! UM FIO SE SOLTOU</p><h2>Vamos tentar de novo?</h2><p id="error-message">Recarregue a página e tente novamente em um navegador com suporte a WebGL.</p><button class="primary-button" type="button" onclick="window.location.reload()">Tentar novamente</button></div></div>
+      <div id="error" class="screen modal-screen" role="alertdialog" aria-modal="true" aria-labelledby="error-title" hidden><div class="modal-card"><p class="eyebrow">OPS! UM FIO SE SOLTOU</p><h2 id="error-title">Vamos tentar de novo?</h2><p id="error-message">Recarregue a página e tente novamente em um navegador com suporte a WebGL.</p><button class="primary-button" type="button" onclick="window.location.reload()">Tentar novamente</button></div></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

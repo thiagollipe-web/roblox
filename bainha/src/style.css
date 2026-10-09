@@ -213,3 +213,11 @@ h2 { color: var(--deep); font-size: 43px; font-weight: 1000; line-height: 1.05; 
   .intro-input-hint { margin-top: 12px; }
   .toast { top: 72px; left: auto; right: 18px; transform: none; max-width: 44%; padding: 9px 12px; font-size: 11px; }
 }
+@media (max-height: 440px) and (max-width: 650px) {
+  .intro-screen { padding: 12px 22px; }
+  .intro-copy { margin-top: 0; padding: 8px 0 4px; }
+  .intro-copy > .eyebrow, .intro-copy .premise, .intro-copy .intro-input-hint, .intro-footer { display: none; }
+  h1 { font-size: 64px; margin-top: 0; }
+  .game-subtitle { font-size: 16px; margin: 8px 0 14px 4px; padding: 3px 10px; }
+  .intro-copy .primary-button { min-height: 44px; padding: 8px 18px; width: 225px; font-size: 16px; }
+}
