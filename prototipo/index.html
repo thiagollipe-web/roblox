@@ -3,65 +3,70 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
-    <meta name="theme-color" content="#e8e5d5" />
-    <meta name="description" content="Entre nos Jardins de Porcelana. Uma demonstração 3D de BAINHA — O Avesso do Céu." />
-    <title>BAINHA — O Avesso do Céu</title>
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='15' fill='%23e8e5d5'/%3E%3Cpath d='M20 49V15h11c15 0 15 16 0 17H20m11 0c17 0 17 17 0 17H20' fill='none' stroke='%23375b54' stroke-width='4'/%3E%3C/svg%3E" />
-    <script type="module" crossorigin src="./assets/index-DYCYQbty.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-IbvoL6r7.css">
+    <meta name="theme-color" content="#2ac8e4" />
+    <meta name="description" content="Corra, salte e costure novos caminhos em BAINHA: Colina das Costuras, uma aventura 3D em WebGL." />
+    <title>BAINHA — Colina das Costuras</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%2321bfd1'/%3E%3Cpath d='M21 48V16h10c14 0 14 15 0 16H21m10 0c15 0 15 16 0 16H21' fill='none' stroke='white' stroke-width='6' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <script type="module" crossorigin src="./assets/index-DXH5xnSn.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-oFVwnIpP.css">
   </head>
   <body>
     <div id="app">
-      <div id="scene" aria-label="Jardins de Porcelana, cenário tridimensional interativo"></div>
+      <div id="scene" aria-label="Colina das Costuras, mundo tridimensional interativo"></div>
 
       <div id="loading" role="status" aria-live="polite">
         <span class="loading-mark" aria-hidden="true"></span>
-        <span>Preparando os jardins…</span>
+        <span>Plantando uma aventura…</span>
       </div>
 
       <main id="menu" class="screen intro-screen" aria-labelledby="game-title">
         <div class="intro-topline">
-          <span class="wordmark-small">BAINHA</span>
-          <span class="edition">UM MUNDO PARA RECOSTURAR</span>
+          <span class="world-badge"><span aria-hidden="true">✦</span> UMA AVENTURA NAS ALTURAS</span>
+          <span class="edition">3D · WEBGL</span>
         </div>
         <div class="intro-copy">
-          <p class="eyebrow"><span class="fine-line"></span> DEMONSTRAÇÃO JOGÁVEL</p>
-          <h1 id="game-title">BAINHA</h1>
-          <p class="game-subtitle">O Avesso do Céu</p>
-          <p class="premise">O mundo está se desfazendo.<br />Um fio de luz pode reconectar tudo.</p>
+          <p class="eyebrow">PRONTA PARA DAR O PRÓXIMO SALTO?</p>
+          <h1 id="game-title">BAINHA<span class="logo-thread" aria-hidden="true">⌁</span></h1>
+          <p class="game-subtitle">Colina das Costuras</p>
+          <p class="premise">Saltos enormes. Pequenas descobertas.<br />E um fio capaz de unir o impossível.</p>
           <button id="start" class="primary-button" type="button">
-            <span>Entrar nos jardins</span>
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6" /></svg>
+            <span>Vamos jogar!</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 8 7-8 7Z" /></svg>
           </button>
-          <p class="intro-input-hint desktop-copy"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> mover <span>·</span> <kbd>ESPAÇO</kbd> saltar <span>·</span> <kbd>E</kbd> costurar</p>
-          <p class="intro-input-hint touch-copy">Arraste para mover · toque para saltar · segure para costurar</p>
+          <p class="intro-input-hint desktop-copy"><kbd>W A S D</kbd> mover <span>·</span> <kbd>ESPAÇO</kbd> saltar <span>·</span> <kbd>E</kbd> fio</p>
+          <p class="intro-input-hint touch-copy">Arraste para correr. Deslize para cima para saltar!</p>
         </div>
         <div class="intro-footer">
-          <div class="chapter"><span class="chapter-number">01</span><div><span class="chapter-label">PRIMEIRO DESTINO</span><span class="chapter-name">Jardins de Porcelana</span></div></div>
-          <p class="prototype-note">Uma pequena aventura em desenvolvimento.</p>
+          <div class="chapter"><span class="chapter-number">01</span><div><span class="chapter-label">SEU PRIMEIRO DESTINO</span><span class="chapter-name">Colina das Costuras</span></div></div>
+          <p class="prototype-note">Uma fase para explorar.<br />Um mundo para imaginar.</p>
         </div>
       </main>
 
       <div id="hud" hidden>
         <header class="game-header">
-          <div class="hud-identity"><span class="wordmark-small">BAINHA</span><span class="hud-world">JARDINS DE PORCELANA</span></div>
+          <div class="collectibles" aria-label="Itens coletados">
+            <div class="collectible-chip coin-chip" title="Botões de luz"><span class="coin-icon" aria-hidden="true"></span><span id="coin-count" aria-label="Botões de luz coletados">00/24</span></div>
+            <div class="collectible-chip special-chip" title="Bobinas azuis"><span class="spool-icon" aria-hidden="true">✦</span><span id="special-count" aria-label="Bobinas azuis coletadas">0/3</span></div>
+          </div>
           <div class="header-actions">
             <button id="help" class="icon-button" type="button" aria-label="Ver controles" title="Controles"><span aria-hidden="true">?</span></button>
-            <button id="pause" class="icon-button" type="button" aria-label="Pausar jogo" title="Pausar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6v12M15 6v12" /></svg></button>
+            <button id="pause" class="icon-button" type="button" aria-label="Pausar jogo" title="Pausar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6v12M16 6v12" /></svg></button>
           </div>
         </header>
         <div class="objective-wrap">
-          <p id="objective">Encontre a primeira âncora de luz.</p>
-          <div id="progress" class="progress" aria-label="Progresso da aventura"><span class="progress-light"></span><span class="progress-light"></span><span class="progress-light"></span></div>
+          <p id="objective">Siga os botões de luz!</p>
+          <div class="objective-details">
+            <div id="progress" class="progress" aria-label="Progresso da aventura"><span class="progress-light"></span><span class="progress-light"></span><span class="progress-light"></span></div>
+            <div class="ribbon-status"><span class="ribbon-icon" aria-hidden="true">⌁</span><span id="ribbon-state">Fio pronto</span></div>
+          </div>
         </div>
-        <div class="ribbon-status"><span class="ribbon-icon" aria-hidden="true">⌁</span><span id="ribbon-state">Fio de luz pronto</span></div>
       </div>
 
       <div id="hint" class="context-hint" hidden></div>
       <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
       <div id="controls" hidden>
-        <div id="touch-zone" aria-label="Arraste para mover, toque para saltar, segure para costurar">
+        <div id="touch-zone" aria-label="Arraste para mover. Deslize para cima durante o movimento para saltar. Toque parado para saltar ou segure parado para usar o fio.">
           <span class="joystick-ring" aria-hidden="true"></span>
           <span id="joystick-knob" aria-hidden="true"></span>
           <span class="joystick-caption">MOVER</span>
@@ -71,43 +76,45 @@
           <button id="jump" class="touch-button jump-button" type="button" aria-label="Saltar"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 25V7M9 14l7-7 7 7M7 26h18" /></svg><span>Saltar</span></button>
         </div>
       </div>
-      <div id="cancel-indicator" hidden>Deslize para cancelar</div>
+      <div id="cancel-indicator" hidden>↓ Deslize para cancelar</div>
 
       <section id="pause-menu" class="screen modal-screen" aria-labelledby="pause-title" hidden>
         <div class="modal-card">
-          <p class="eyebrow">UM INSTANTE ENTRE OS FIOS</p>
-          <h2 id="pause-title">Respire.</h2>
-          <p class="modal-description">Os jardins esperam por você.</p>
+          <p class="eyebrow">COLINA DAS COSTURAS</p>
+          <h2 id="pause-title">Uma pausa!</h2>
+          <p class="modal-description">A próxima descoberta está logo ali.</p>
           <div class="control-guide desktop-copy">
             <div><span>Mover</span><span><kbd>W A S D</kbd> ou <kbd>↑ ↓ ← →</kbd></span></div>
             <div><span>Saltar</span><kbd>ESPAÇO</kbd></div>
             <div><span>Costurar / tensionar / liberar</span><kbd>E</kbd></div>
             <div><span>Pausar</span><kbd>ESC</kbd></div>
+            <p>Controle: direcional para mover · A para saltar · RT para o fio.</p>
           </div>
           <div class="control-guide touch-copy">
             <div><span>Mover</span><span>Arraste com o polegar</span></div>
-            <div><span>Saltar</span><span>Toque rápido ou botão ↑</span></div>
-            <div><span>Usar o fio</span><span>Segure ou toque em Costurar</span></div>
-            <p>A câmera acompanha sua aventura.</p>
+            <div><span>Saltar correndo</span><span>Deslize para cima</span></div>
+            <div><span>Saltar parado</span><span>Toque rápido ou botão ↑</span></div>
+            <div><span>Usar o fio</span><span>Segure parado ou botão do fio</span></div>
+            <p>A câmera acompanha você. Seu polegar cuida da aventura!</p>
           </div>
-          <button id="resume" class="primary-button" type="button"><span>Continuar a aventura</span><span aria-hidden="true">→</span></button>
-          <button id="restart" class="text-button" type="button">Recomeçar os jardins</button>
+          <button id="resume" class="primary-button" type="button"><span>Voltar à aventura</span><span aria-hidden="true">→</span></button>
+          <button id="restart" class="text-button" type="button">Recomeçar a fase</button>
         </div>
       </section>
 
       <section id="win-menu" class="screen modal-screen victory-screen" aria-labelledby="win-title" hidden>
         <div class="modal-card">
-          <span class="victory-symbol" aria-hidden="true">✳</span>
-          <p class="eyebrow">JARDINS DE PORCELANA</p>
-          <h2 id="win-title">Tudo se conecta.</h2>
-          <p class="modal-description">O primeiro fio foi restaurado.<br />Há um mundo inteiro do outro lado.</p>
+          <span class="victory-symbol" aria-hidden="true">✦</span>
+          <p class="eyebrow">COLINA DAS COSTURAS</p>
+          <h2 id="win-title">Que aventura!</h2>
+          <p class="modal-description">Cada salto, uma descoberta.<br />Você costurou um novo caminho!</p>
           <p id="win-stats" class="win-stats"></p>
-          <button id="again" class="primary-button" type="button"><span>Explorar de novo</span><span aria-hidden="true">→</span></button>
-          <p class="end-note">Fim desta demonstração · BAINHA</p>
+          <button id="again" class="primary-button" type="button"><span>Jogar de novo</span><span aria-hidden="true">↻</span></button>
+          <p class="end-note">BAINHA · Protótipo jogável</p>
         </div>
       </section>
 
-      <div id="error" class="screen modal-screen" role="alert" hidden><div class="modal-card"><p class="eyebrow">UM FIO SE SOLTOU</p><h2>Não foi possível abrir os jardins.</h2><p id="error-message">Recarregue a página e tente novamente em um navegador com suporte a gráficos 3D.</p><button class="primary-button" type="button" onclick="window.location.reload()">Tentar novamente</button></div></div>
+      <div id="error" class="screen modal-screen" role="alert" hidden><div class="modal-card"><p class="eyebrow">OPS! UM FIO SE SOLTOU</p><h2>Vamos tentar de novo?</h2><p id="error-message">Recarregue a página e tente novamente em um navegador com suporte a WebGL.</p><button class="primary-button" type="button" onclick="window.location.reload()">Tentar novamente</button></div></div>
     </div>
   </body>
 </html>

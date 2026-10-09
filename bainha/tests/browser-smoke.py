@@ -5,12 +5,17 @@ Requires Python Playwright and Chromium. Does not mutate application state.
 import json
 import os
 import asyncio
+import hashlib
 from pathlib import Path
 from playwright.async_api import async_playwright
 BASE = os.environ.get('BAINHA_URL', 'http://127.0.0.1:8001/prototipo/')
-OUT = Path(os.environ.get('BAINHA_ARTIFACTS', '/workspace/onboarding/bainha'))
+OFFLINE = os.environ.get('BAINHA_OFFLINE') == '1'
+HTML_FILE = os.environ.get('BAINHA_HTML_FILE')
+OUT = Path(os.environ.get('BAINHA_ARTIFACTS', '/workspace/onboarding/bainha-redesign'))
 OUT.mkdir(parents=True, exist_ok=True)
-report = {'url': BASE, 'input_method': 'Playwright keyboard and Chromium CDP touch events; snapshots read only', 'checks': [], 'errors': [], 'failed_http': [], 'screenshots': []}
+report = {'url': BASE if not HTML_FILE else 'about:blank', 'html_file': HTML_FILE, 'load_method': 'HTML content fixture' if HTML_FILE else 'navigation', 'offline': OFFLINE, 'input_method': 'Playwright keyboard and Chromium CDP touch events; snapshots read only', 'checks': [], 'errors': [], 'failed_http': [], 'external_requests': [], 'screenshots': []}
+if HTML_FILE:
+    report['html_sha256'] = hashlib.sha256(Path(HTML_FILE).read_bytes()).hexdigest()
 
 async def snap(page):
     return await page.evaluate('window.__BAINHA__.snapshot()')
@@ -27,9 +32,16 @@ async def wait(page, condition, timeout=60000):
         raise
 
 async def check(name, page, condition=True):
-    assert condition, name
+    await assert_condition(page, condition, name)
     report['checks'].append({'name': name, 'state': await snap(page)})
     print(name, flush=True)
+
+async def assert_condition(page, condition, name):
+    if not condition:
+        report['failure_state'] = await snap(page)
+        report['failure_browser'] = await page.evaluate('({hidden:document.hidden,focused:document.hasFocus(),events:window.__touchQA || []})')
+        await capture(page, 'failure')
+        raise AssertionError(name)
 
 async def capture(page, name):
     path = OUT / (name + '.png')
@@ -37,20 +49,42 @@ async def capture(page, name):
     report['screenshots'].append(str(path))
 
 async def observe(page):
+    if OFFLINE:
+        await page.context.set_offline(True)
+    page.on('request', lambda r: report['external_requests'].append(r.url) if r.url.startswith(('http://', 'https://')) else None)
     page.on('pageerror', lambda e: report['errors'].append(str(e)))
+    page.on('console', lambda message: report['errors'].append('console.error: ' + message.text) if message.type == 'error' else None)
     page.on('response', lambda r: report['failed_http'].append({'url': r.url, 'status': r.status}) if r.status >= 400 else None)
     page.on('requestfailed', lambda r: report['errors'].append('request failed: ' + r.url + ': ' + str(r.failure)))
     page.set_default_timeout(30000)
-    await page.goto(BASE, wait_until='networkidle')
+    if HTML_FILE:
+        await page.set_content(Path(HTML_FILE).read_text(), wait_until='networkidle')
+    else:
+        await page.goto(BASE, wait_until='networkidle')
     await page.wait_for_function('window.__BAINHA__ && !document.querySelector("#menu").hidden')
 
 async def move_keyboard(page, z):
     await page.keyboard.down('w')
     try:
-        await wait(page, f's.position.z >= {z}')
+        await wait(page, f's.position.z >= {z} || s.won')
     finally:
         await page.keyboard.up('w')
     await page.wait_for_timeout(250)
+
+async def jump_keyboard(page, takeoff, landing, minimum_height):
+    """Cross a gap using normal movement and a real Space press."""
+    deaths = (await snap(page))['deaths']
+    await page.keyboard.down('w')
+    try:
+        await wait(page, f's.position.z >= {takeoff}')
+        await page.keyboard.press('Space')
+        await wait(page, f's.position.y > {minimum_height} || s.deaths > {deaths}')
+        await wait(page, f's.position.z >= {landing} || s.deaths > {deaths}')
+    finally:
+        await page.keyboard.up('w')
+    await wait(page, 's.grounded')
+    await page.wait_for_timeout(160)
+    await assert_condition(page, (await snap(page))['deaths'] == deaths, f'Keyboard jump failed at z={takeoff}')
 
 class Touch:
 
@@ -96,22 +130,37 @@ class Touch:
         """
         start = asyncio.create_task(self.send('touchStart'))
         await asyncio.sleep(.016)
-        move = asyncio.create_task(self.send('touchMove', y=self.y - 55))
+        move = asyncio.create_task(self.send('touchMove', y=self.y - 42))
         await asyncio.gather(start, move)
         events = await self.page.evaluate('window.__touchQA.slice(-2)')
-        assert [e['type'] for e in events] == ['pointerdown', 'pointermove'], events
+        await assert_condition(self.page, [e['type'] for e in events] == ['pointerdown', 'pointermove'], str(events))
         gap = events[1]['timestamp'] - events[0]['timestamp']
-        assert 0 <= gap < 220, f'Injected drag arrived too slowly: {gap} ms'
+        await assert_condition(self.page, 0 <= gap < 220, f'Injected drag arrived too slowly: {gap} ms')
         report.setdefault('drag_input_gaps_ms', []).append(gap)
-        assert not (await snap(self.page))['aiming'], 'Immediate drag was classified as aim'
+        await assert_condition(self.page, not (await snap(self.page))['aiming'], 'Immediate drag was classified as aim')
 
     async def move(self, z):
         await self.start_move()
         try:
-            await wait(self.page, f's.position.z >= {z}')
+            await wait(self.page, f's.position.z >= {z} || s.won')
         finally:
             await self.send('touchEnd')
         await self.page.wait_for_timeout(300)
+
+    async def jump_to(self, takeoff, landing, minimum_height):
+        """One finger keeps steering while its upward flick requests a jump."""
+        deaths = (await snap(self.page))['deaths']
+        await self.start_move()
+        try:
+            await wait(self.page, f's.position.z >= {takeoff}')
+            await self.send('touchMove', y=self.y - 108)
+            await wait(self.page, f's.position.y > {minimum_height} || s.deaths > {deaths}')
+            await wait(self.page, f's.position.z >= {landing} || s.deaths > {deaths}')
+        finally:
+            await self.send('touchEnd')
+        await wait(self.page, 's.grounded')
+        await self.page.wait_for_timeout(160)
+        await assert_condition(self.page, (await snap(self.page))['deaths'] == deaths, f'One-thumb jump failed at z={takeoff}')
 
 async def main():
     try:
@@ -124,16 +173,39 @@ async def main():
             await page.locator('#start').click()
             await wait(page, 's.started && !s.paused')
             await check('desktop boot/start', page)
+            await check('desktop WebGL2 canvas', page, await page.evaluate('!!document.querySelector("#scene canvas").getContext("webgl2")'))
             await page.keyboard.press('Space')
-            await wait(page, 's.position.y > .15')
+            await wait(page, 's.position.y > .3')
             await check('desktop jump', page)
             await wait(page, 's.grounded')
+            await jump_keyboard(page, 4, 7.2, .9)
+            await check('desktop first elevated platform', page, (await snap(page))['position']['y'] > .6)
+            await jump_keyboard(page, 8.6, 11.6, 1.6)
+            await capture(page, 'desktop-elevated-platforms')
+            await check('desktop second elevated platform', page, (await snap(page))['position']['y'] > 1.2)
+            await jump_keyboard(page, 12.9, 16.5, 1.6)
+            await move_keyboard(page, 21.5)
+            await wait(page, 's.checkpoint === 1')
+            state = await snap(page)
+            await check('desktop collects coins along the jump route', page, state['coins'] >= 4)
+            coins_before_fall = state['coins']
+            deaths_before_fall = state['deaths']
+            await page.keyboard.down('d')
+            try:
+                await wait(page, f's.deaths > {deaths_before_fall}')
+            finally:
+                await page.keyboard.up('d')
+            await wait(page, 's.grounded')
+            state = await snap(page)
+            await check('desktop fall returns to checkpoint and retains coins', page,
+                state['checkpoint'] == 1 and abs(state['position']['z'] - 20) < .5 and state['coins'] >= coins_before_fall)
+            await move_keyboard(page, 22)
             await page.keyboard.press('e')
             await wait(page, 's.pair === 0')
-            await move_keyboard(page, 8.5)
+            await move_keyboard(page, 29)
             await capture(page, 'desktop-bridge')
             await check('desktop ribbon traversal', page, (await snap(page))['onRibbon'])
-            await move_keyboard(page, 18)
+            await move_keyboard(page, 41)
             await page.keyboard.press('e')
             await wait(page, 's.pair === 1')
             await page.keyboard.press('e')
@@ -141,7 +213,9 @@ async def main():
             await page.keyboard.press('e')
             await wait(page, 's.enemy === "captured"')
             await check('desktop enemy puzzle', page)
-            await move_keyboard(page, 37)
+            await move_keyboard(page, 53.5)
+            await jump_keyboard(page, 54.2, 56.6, 3.5)
+            await wait(page, 's.grounded && s.position.y > 3.1')
             await page.keyboard.press('e')
             await wait(page, 's.pair === 2')
             await page.keyboard.press('e')
@@ -151,15 +225,15 @@ async def main():
             await page.keyboard.press('e')
             await wait(page, 's.canalOpen')
             await capture(page, 'desktop-launch')
-            await wait(page, 's.grounded && s.position.z > 43')
+            await wait(page, 's.grounded && s.position.z > 63')
             await check('desktop boss launch/landing', page)
-            await move_keyboard(page, 45)
+            await move_keyboard(page, 68)
             await wait(page, 's.won')
             await capture(page, 'desktop-win')
             await check('desktop complete game', page)
             await page.locator('#again').click()
-            await wait(page, 's.started && !s.won && s.checkpoint === 0 && s.pair === null')
-            await check('desktop restart', page)
+            await wait(page, 's.started && !s.won && s.checkpoint === 0 && s.pair === null && s.coins === 0')
+            await check('desktop restart clears collectibles', page)
             await page.keyboard.press('Escape')
             await wait(page, 's.paused')
             before = (await snap(page))['position']
@@ -185,23 +259,32 @@ async def main():
             await wait(page, 's.position.y > .15')
             await check('portrait one-thumb tap jump', page)
             await wait(page, 's.grounded')
+            await touch.jump_to(4, 6.95, .9)
+            await check('portrait one-thumb flick jumps to first platform', page, (await snap(page))['position']['y'] > .6)
+            await touch.jump_to(8.6, 11.1, 1.6)
+            await capture(page, 'portrait-elevated-platforms')
+            await check('portrait one-thumb second elevated jump', page, (await snap(page))['position']['y'] > 1.2)
+            await touch.jump_to(12.9, 16.5, 1.6)
+            await touch.move(22)
+            await check('portrait jump route and coin collection', page,
+                (await snap(page))['checkpoint'] == 1 and (await snap(page))['coins'] >= 4)
             await touch.send('touchStart')
             await wait(page, 's.aiming')
             await touch.send('touchCancel')
             await wait(page, '!s.aiming')
-            await check('portrait pointercancel preserves no ribbon', page, (await snap(page))['pair'] is None)
+            await check('portrait pointercancel preserves no ribbon near valid anchor', page, (await snap(page))['pair'] is None)
             await touch.send('touchStart')
             await wait(page, 's.aiming')
             await touch.send('touchMove', y=touch.y + 60)
             await touch.send('touchEnd')
-            await check('portrait downward aim cancellation', page, (await snap(page))['pair'] is None)
+            await check('portrait downward aim cancellation near valid anchor', page, (await snap(page))['pair'] is None)
             await touch.hold()
             await wait(page, 's.pair === 0')
             await check('portrait one-thumb hold creates ribbon', page)
-            await touch.move(8.5)
+            await touch.move(29)
             await capture(page, 'portrait-bridge')
             await check('portrait one-thumb drag traversal', page, (await snap(page))['onRibbon'])
-            await touch.move(18)
+            await touch.move(41)
             await touch.hold()
             await wait(page, 's.pair === 1')
             await touch.hold()
@@ -209,7 +292,9 @@ async def main():
             await touch.hold()
             await wait(page, 's.enemy === "captured"')
             await check('portrait one-thumb enemy puzzle', page)
-            await touch.move(36.8)
+            await touch.move(53.5)
+            await touch.jump_to(54.2, 56.2, 3.5)
+            await wait(page, 's.grounded && s.position.y > 3.1')
             await touch.hold()
             await wait(page, 's.pair === 2')
             await touch.hold()
@@ -222,21 +307,22 @@ async def main():
                 await wait(page, 's.taut && s.bossReady')
                 await touch.hold()
             await wait(page, 's.canalOpen')
-            await wait(page, 's.grounded && s.position.z > 43')
+            await wait(page, 's.grounded && s.position.z > 63')
             await check('portrait one-thumb launch/landing', page)
-            await touch.move(45)
+            await touch.move(68)
             await wait(page, 's.won')
             await capture(page, 'portrait-win')
             await check('portrait full one-thumb completion', page)
             await page.locator('#again').tap()
-            await wait(page, '!s.won && s.checkpoint === 0')
-            await check('portrait restart', page)
+            await wait(page, '!s.won && s.checkpoint === 0 && s.coins === 0')
+            await check('portrait restart clears collectibles', page)
             await touch.start_move()
             await wait(page, 's.position.z > .4')
             await touch.send('touchCancel')
-            await page.wait_for_timeout(300)
-            before = (await snap(page))['position']['z']
-            await page.wait_for_timeout(500)
+            await wait(page, 's.grounded && Math.abs(s.velocity.x) < .01 && Math.abs(s.velocity.z) < .01')
+            settled = await snap(page)
+            before = settled['position']['z']
+            await wait(page, f's.elapsed >= {settled["elapsed"] + .3}')
             await check('portrait pointercancel stops movement', page, abs((await snap(page))['position']['z'] - before) < 0.02)
             other = await mobile.new_page()
             await other.goto('about:blank')
@@ -263,6 +349,8 @@ async def main():
             await browser.close()
             assert not report['errors'], report['errors']
             assert not report['failed_http'], report['failed_http']
+            if OFFLINE:
+                assert not report['external_requests'], report['external_requests']
             report['passed'] = True
     except Exception as e:
         report['passed'] = False
@@ -275,4 +363,5 @@ async def main():
     finally:
         (OUT / 'browser-smoke-report.json').write_text(json.dumps(report, indent=2))
         print(json.dumps({'passed': report.get('passed'), 'checks': len(report['checks']), 'failure': report.get('failure'), 'report': str(OUT / 'browser-smoke-report.json')}), flush=True)
-asyncio.run(main())
+if __name__ == '__main__':
+    asyncio.run(main())
