@@ -7,8 +7,8 @@
     <meta name="description" content="Corra, salte e costure novos caminhos em BAINHA: Colina das Costuras, uma aventura 3D em WebGL." />
     <title>BAINHA — Colina das Costuras</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%2321bfd1'/%3E%3Cpath d='M21 48V16h10c14 0 14 15 0 16H21m10 0c15 0 15 16 0 16H21' fill='none' stroke='white' stroke-width='6' stroke-linecap='round'/%3E%3C/svg%3E" />
-    <script type="module" crossorigin src="./assets/index-DXH5xnSn.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-oFVwnIpP.css">
+    <script type="module" crossorigin src="./assets/index-Ba8xNKy9.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-VD6-UMM4.css">
   </head>
   <body>
     <div id="app">
@@ -97,6 +97,15 @@
             <div><span>Usar o fio</span><span>Segure parado ou botão do fio</span></div>
             <p>A câmera acompanha você. Seu polegar cuida da aventura!</p>
           </div>
+          <label class="graphics-setting" for="graphics-quality">
+            <span>Gráficos</span>
+            <select id="graphics-quality">
+              <option value="auto">Automáticos</option>
+              <option value="high">Mais detalhes</option>
+              <option value="low">Mais desempenho</option>
+            </select>
+          </label>
+          <p class="graphics-note">Se estiver travando, experimente “Mais desempenho”.</p>
           <button id="resume" class="primary-button" type="button"><span>Voltar à aventura</span><span aria-hidden="true">→</span></button>
           <button id="restart" class="text-button" type="button">Recomeçar a fase</button>
         </div>

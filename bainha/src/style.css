@@ -87,6 +87,10 @@ h2 { color: var(--deep); font-size: 43px; font-weight: 1000; line-height: 1.05; 
 .control-guide > div { display: flex; justify-content: space-between; align-items: center; gap: 10px; border-bottom: 1px solid #c8e8ec; padding: 9px 0; }
 .control-guide > div > :last-child { text-align: right; }
 .control-guide p { margin: 12px 0 0; color: #6a92a0; text-align: center; font-size: 10px; line-height: 1.5; }
+.graphics-setting { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding-top: 8px; font-size: 12px; text-align: left; }
+.graphics-setting select { max-width: 70%; font: inherit; color: var(--ink); border: 2px solid #b9e7ea; border-radius: 10px; padding: 8px 10px; background: #eefbfa; touch-action: manipulation; }
+.graphics-setting select:focus-visible { outline: 3px solid var(--deep); outline-offset: 2px; }
+.graphics-note { margin-top: 9px; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .modal-card .primary-button { width: 100%; margin-top: 20px; min-height: 54px; font-size: 17px; border-color: #fff; }
 .text-button { font-size: 11px; color: #668e9e; background: transparent; margin-top: 20px; padding: 7px 10px; }
 .text-button:hover { text-decoration: underline; }

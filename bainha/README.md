@@ -18,6 +18,12 @@ Abra `../prototipo/BAINHA.html` com Chrome ou Edge. O HTML incorpora código, es
 - Celular: na área circular inferior, **arraste** para mover; durante o movimento, **empurre mais para cima** para saltar sem tirar o polegar. Retorne à região central do controle antes de repetir o gesto. Um toque rápido também salta; **segure parado e solte** para usar a fita. Durante a pressão, arrastar para baixo cancela. Os botões de salto e costura oferecem outra forma de jogar.
 - Gamepad: analógico esquerdo, botão inferior para salto e gatilho direito para costura. Mapeamento implementado; hardware físico ainda não verificado.
 
+## Arte e fluidez
+
+O menu de pausa oferece **Gráficos → Automáticos / Mais detalhes / Mais desempenho**. O modo automático adapta a resolução quando o navegador fica lento por um período sustentado; o modo de desempenho reduz o custo de sombras e resolução. A preferência vale para a sessão atual.
+
+O cenário usa objetos repetidos em lotes, iluminação com sombras seletivas e geometrias de fita preparadas antecipadamente. O personagem tem transições suaves entre corrida, salto e pouso. Os shaders são preparados durante a abertura para reduzir engasgos na primeira interação.
+
 ## Percurso
 
 1. Corra pelo gramado e salte entre os dois degraus suspensos até chegar ao pomar. Carretéis amarelos indicam o percurso; as bobinas azuis ficam em desvios elevados.
@@ -31,7 +37,8 @@ Quedas devolvem ao último apoio e preservam mecanismos já resolvidos. O menu d
 
 - `src/game.ts`: simulação independente da cena, controlador cinemático Rapier, colisões, saltos, coletáveis, checkpoints e estados da fita.
 - `src/view.ts`: apresentação Three.js, geometria original, iluminação, animação e câmera automática. Malhas estáticas são agrupadas por material para reduzir chamadas de desenho.
-- `src/main.ts`: normalização das entradas de teclado, controle e toque; integração da simulação em passos fixos de 1/60 s; atualização da interface DOM. Segurar a costura desacelera a simulação.
+- `src/main.ts`: normalização das entradas, simulação em passos fixos de 1/60 s e interface DOM atualizada quando seu estado muda. A pausa suspende os desenhos WebGL.
+- `src/motion.ts`: interpola a posição visual entre passos da física para manter movimento contínuo em telas de diferentes frequências. Reinícios, quedas e mudanças de apoio redefinem a interpolação.
 - `index.html` / `src/style.css`: interface responsiva em português, com área central livre para ver os pousos.
 - `scripts/standalone.mjs`: incorpora o build, estilos, física WASM e licenças em um HTML único, sem recursos externos.
 
@@ -66,7 +73,7 @@ Os testes de navegador usam Python Playwright e `/usr/bin/chromium`, quando disp
 python3 tests/browser-smoke.py
 ```
 
-Consulte o cabeçalho desse script para suas opções e destino das evidências. Capturas e resultados não devem ser publicados junto ao jogo.
+O padrão verifica desktop e retrato. Use `BAINHA_DEVICE=desktop` ou `BAINHA_DEVICE=portrait` para repetir somente um perfil, e `BAINHA_ARTIFACTS` para escolher a pasta de evidências. Capturas e resultados não devem ser publicados junto ao jogo.
 
 Para verificar o arquivo único com a rede desabilitada:
 
@@ -81,6 +88,16 @@ BAINHA_HTML_FILE=/workspace/roblox/prototipo/BAINHA.html BAINHA_OFFLINE=1 BAINHA
 ```
 
 Esse segundo modo comprova funcionamento sem recursos externos, mas não comprova a abertura direta por `file://` naquele navegador.
+
+## Medição de desempenho
+
+`tests/performance-smoke.py` compara a mesma cena em desktop e retrato, contando comandos WebGL e triângulos, além de registrar intervalos entre quadros e tempo do código por quadro. Use o modo `high` para comparar versões com a mesma resolução. A comparação rejeita diferenças no tamanho real do buffer de desenho.
+
+```sh
+python3 tests/performance-smoke.py --help
+```
+
+As medições com Chromium/SwiftShader neste ambiente são comparações de software, não previsões de FPS no computador ou celular do jogador. Os testes de jogabilidade continuam sendo executados separadamente, com entradas reais de teclado e toque emulado.
 
 ## Escopo e limitações
 
