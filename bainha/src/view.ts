@@ -162,13 +162,26 @@ export function createView(container: HTMLElement) {
   for (const zone of terrainZones.values()) { shadows(zone); batchRigid(zone); }
   const flowerDots = new THREE.InstancedMesh(detailGeometry, pink, flowers.length * 4);
   const flowerCenters = new THREE.InstancedMesh(detailGeometry, gold, flowers.length);
-  flowers.forEach((f, i) => {
-    for (let j = 0; j < 4; j++) {
-      object.position.set(f.x + Math.cos(j * Math.PI / 2) * f.s, f.y, f.z + Math.sin(j * Math.PI / 2) * f.s);
-      object.scale.set(f.s, f.s * .52, f.s); object.updateMatrix(); flowerDots.setMatrixAt(i * 4 + j, object.matrix);
-    }
-    object.position.set(f.x, f.y + .045, f.z); object.scale.setScalar(f.s * .65); object.updateMatrix(); flowerCenters.setMatrixAt(i, object.matrix);
-  });
+  flowerDots.instanceMatrix.setUsage(THREE.DynamicDrawUsage); flowerCenters.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  const petalDirections = [1, 0, 0, 1, -1, 0, 0, -1];
+  function updateFlowers(t: number) {
+    flowers.forEach((f, i) => {
+      const breeze = Math.sin(t * 2.1 + f.z * .45 + f.x * .28);
+      const x = f.x + breeze * .045, y = f.y + .015 + Math.abs(breeze) * .025;
+      object.rotation.set(breeze * .13, 0, breeze * .08);
+      for (let j = 0; j < 4; j++) {
+        const dx = petalDirections[j * 2], dz = petalDirections[j * 2 + 1];
+        object.position.set(x + dx * f.s, y + (dx - dz) * breeze * f.s * .13, f.z + dz * f.s);
+        object.scale.set(f.s, f.s * .52, f.s); object.updateMatrix(); flowerDots.setMatrixAt(i * 4 + j, object.matrix);
+      }
+      object.position.set(x, y + .045, f.z); object.scale.setScalar(f.s * .65); object.updateMatrix(); flowerCenters.setMatrixAt(i, object.matrix);
+    });
+    flowerDots.instanceMatrix.needsUpdate = true; flowerCenters.instanceMatrix.needsUpdate = true;
+  }
+  updateFlowers(0);
+  // Bounds include the small breeze excursion without recomputing them each frame.
+  flowerDots.computeBoundingSphere(); flowerCenters.computeBoundingSphere();
+  flowerDots.boundingSphere!.radius += .2; flowerCenters.boundingSphere!.radius += .2;
   scene.add(flowerDots, flowerCenters);
 
   // One smooth, vertex-colored silhouette replaces each pair of intersecting hill caps.
@@ -217,7 +230,8 @@ export function createView(container: HTMLElement) {
   const crownMatrices = trees.map(() => new THREE.Matrix4()), instanceMatrix = new THREE.Matrix4();
   function updateTrees(t: number) {
     trees.forEach((tree, index) => {
-      const crown = crownMatrices[index]; crown.makeRotationZ(Math.sin(t * .9 + index) * .018); crown.setPosition(0, 1.9, 0); crown.premultiply(tree.base);
+      const breeze = Math.sin(t * 1.35 + index * .6) * .055 + Math.sin(t * 2.7 + index * .35) * .01;
+      const crown = crownMatrices[index]; crown.makeRotationZ(breeze); crown.setPosition(0, 1.9, 0); crown.premultiply(tree.base);
     });
     for (const batch of treeBatches) {
       batch.parts.forEach((part, index) => {
@@ -241,7 +255,7 @@ export function createView(container: HTMLElement) {
   clouds.instanceMatrix.setUsage(THREE.DynamicDrawUsage); clouds.frustumCulled = false; scene.add(clouds);
   function updateClouds(t: number) {
     cloudParts.forEach((c, i) => {
-      object.position.set(c.x + Math.sin(t * .07 + c.phase) * 2.3, c.y, c.z); object.rotation.set(0, 0, 0);
+      object.position.set(c.x + Math.sin(t * .13 + c.phase) * 4.5, c.y + Math.sin(t * .6 + c.phase) * .16, c.z); object.rotation.set(0, 0, 0);
       object.scale.set(c.sx, c.sy, c.sz); object.updateMatrix(); clouds.setMatrixAt(i, object.matrix);
     });
     clouds.instanceMatrix.needsUpdate = true;
@@ -260,11 +274,11 @@ export function createView(container: HTMLElement) {
   sphere(-.24, 1.35, .04, .16, .25, .25, cream, avatar);
   sphere(.13, 1.49, .2, .24, .15, .19, cream, avatar);
   // Eyes face +z and remain readable in the opening three-quarter view.
-  const eyes = new THREE.Group(); avatar.add(eyes);
+  const eyes = new THREE.Group(); eyes.position.y = 1.25; avatar.add(eyes);
   for (const side of [-1, 1]) {
-    sphere(side * .13, 1.25, .31, .075, .105, .035, white, eyes);
-    sphere(side * .13, 1.255, .341, .041, .064, .019, dark, eyes);
-    sphere(side * .13 - .009, 1.28, .357, .011, .017, .008, white, eyes);
+    sphere(side * .13, 0, .31, .075, .105, .035, white, eyes);
+    sphere(side * .13, .005, .341, .041, .064, .019, dark, eyes);
+    sphere(side * .13 - .009, .03, .357, .011, .017, .008, white, eyes);
     sphere(side * .245, 1.15, .272, .065, .036, .027, coral, avatar);
   }
   sphere(0, 1.18, .35, .06, .055, .06, skin, avatar);
@@ -326,8 +340,8 @@ export function createView(container: HTMLElement) {
       if (collected && !item.collected) item.pop = .38;
       if (!collected) item.pop = 0;
       item.collected = collected; item.pop = Math.max(0, item.pop - dt);
-      object.position.set(item.c.position.x, item.c.position.y + Math.sin(t * 3 + i * .7) * .1 + (collected ? (1 - item.pop / .38) * 1.15 : 0), item.c.position.z);
-      object.rotation.set(0, t * 2 + i * .7, Math.sin(t * 2 + i) * .12);
+      object.position.set(item.c.position.x, item.c.position.y + Math.sin(t * 3.5 + i * .7) * .18 + (collected ? (1 - item.pop / .38) * 1.15 : 0), item.c.position.z);
+      object.rotation.set(Math.sin(t * 2.5 + i) * .08, t * 2.8 + i * .7, Math.sin(t * 2 + i) * .18);
       object.scale.setScalar((item.c.special ? .34 : .2) * (collected ? item.pop / .38 : 1)); object.updateMatrix();
       (item.c.special ? pickupBatches.specialBodies : pickupBatches.bodies).setMatrixAt(item.batchIndex, object.matrix);
       (item.c.special ? pickupBatches.specialRims : pickupBatches.rims).setMatrixAt(item.batchIndex, object.matrix);
@@ -470,9 +484,11 @@ export function createView(container: HTMLElement) {
   let visualClock = 0;
   let angle=Math.PI,walkClock=0,wasGrounded=true,landing=0,lastPulses=0,pulseAge=99,firstFrame=true;
   let walkBlend = 0, airBlend = 0, turnBank = 0, jumpStretch = 0;
+  let restingTime = 0, animationMode: 'idle' | 'run' | 'jump' | 'aim' | 'win' = 'idle';
   const limbTargets = new Float32Array(4);
   let lastDeaths = 0, lastElapsed = 0, lastStarted = false, lastCheckpoint = 0;
   const cameraLook = new THREE.Vector3(), cameraDesired=new THREE.Vector3(),lookDesired=new THREE.Vector3();
+  const diagnosticProjection = new THREE.Matrix4();
   let quality: QualityMode = 'auto', effectiveQuality: 'high' | 'low' = 'high';
   let renderedFrames = 0, qualityChanges = 0, frameTimeMs = 16.67, warmupTime = 0, slowTime = 0;
   let portrait=false;
@@ -518,9 +534,19 @@ export function createView(container: HTMLElement) {
     if (slowTime > 1.75) applyQuality('low');
   }
   function diagnostics() {
+    diagnosticProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     return Object.freeze({ drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles,
       pixelRatio: renderer.getPixelRatio(), quality, effectiveQuality, shadowMode: effectiveQuality === 'high' ? 'dynamic' : 'blob',
-      renderedFrames, frameTimeMs: Math.round(frameTimeMs * 100) / 100, qualityChanges, geometryCount: renderer.info.memory.geometries });
+      renderedFrames, frameTimeMs: Math.round(frameTimeMs * 100) / 100, qualityChanges, geometryCount: renderer.info.memory.geometries,
+      camera: { viewProjection: diagnosticProjection.toArray(), position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+        hero: { x: player.position.x, y: player.position.y, z: player.position.z } },
+      animation: { time: visualClock, mode: animationMode, yaw: player.rotation.y,
+        rig: { leftLegX: limbs[0].rotation.x, rightLegX: limbs[2].rotation.x, leftArmX: limbs[1].rotation.x, rightArmX: limbs[3].rotation.x,
+          leftArmZ: limbs[1].rotation.z, rightArmZ: limbs[3].rotation.z, bodyY: avatar.position.y, bodyRoll: avatar.rotation.z,
+          bodyScaleY: avatar.scale.y, scarfX: scarf.rotation.x },
+        ambient: { treeSway: Math.atan2(crownMatrices[0].elements[1], crownMatrices[0].elements[0]), cloudX: clouds.instanceMatrix.array[12],
+          flowerY: flowerCenters.instanceMatrix.array[13], coinY: pickupBatches.bodies.instanceMatrix.array[13], guardianRoll: flower.rotation.z } },
+    });
   }
   let preparation: Promise<void> | undefined;
   function prepare() {
@@ -549,7 +575,7 @@ export function createView(container: HTMLElement) {
     const reset = (!lastStarted && started) || options.elapsed < lastElapsed || s.deaths !== lastDeaths || (s.checkpoint === 0 && lastCheckpoint > 0);
     if (reset) {
       firstFrame = true; visualClock = 0; walkClock = 0; walkBlend = 0; airBlend = s.grounded ? 0 : 1;
-      turnBank = 0; jumpStretch = 0; landing = 0; wasGrounded = s.grounded; angle = started ? 0 : Math.PI + .28;
+      turnBank = 0; jumpStretch = 0; landing = 0; restingTime = 0; wasGrounded = s.grounded; angle = started ? 0 : Math.PI + .28;
       lastPulses = s.pulses; pulseAge = 99;
       pickups.forEach(item => { item.collected = s.collected.includes(item.c.id); item.pop = 0; });
     }
@@ -558,30 +584,40 @@ export function createView(container: HTMLElement) {
     visualClock += dt;
     const t = visualClock;
     const speed=Math.hypot(s.velocity.x,s.velocity.z),moving=speed>.15;
-    const blend = 1 - Math.exp(-dt * 14), motionBlend = 1 - Math.exp(-dt * 10);
-    walkClock+=dt*speed*2.9;
+    const blend = 1 - Math.exp(-dt * 14), motionBlend = 1 - Math.exp(-dt * 10), limbBlend = 1 - Math.exp(-dt * 24);
+    animationMode = s.won ? 'win' : !s.grounded ? 'jump' : moving ? 'run' : aiming ? 'aim' : 'idle';
+    restingTime = !moving && s.grounded && !aiming && !s.won ? restingTime + dt : 0;
+    // A slower, wider stride stays legible from the distant gameplay camera.
+    walkClock+=dt*speed*2.2;
     let turn = 0;
     if(moving){const target=Math.atan2(s.velocity.x,s.velocity.z);turn=Math.atan2(Math.sin(target-angle),Math.cos(target-angle));angle+=turn*blend;}
     else if(!started)angle=Math.PI+.28;
     player.position.set(p.x,p.y,p.z);player.rotation.y=angle;
     if(!wasGrounded&&s.grounded)landing=1;
-    wasGrounded=s.grounded;landing=Math.max(0,landing-dt*6);
+    wasGrounded=s.grounded;landing=Math.max(0,landing-dt*4.2);
     walkBlend += ((moving ? Math.min(1, speed / 4.5) : 0) - walkBlend) * motionBlend;
     airBlend += ((s.grounded ? 0 : 1) - airBlend) * blend;
     turnBank += (THREE.MathUtils.clamp(-turn * .15, -.16, .16) * walkBlend - turnBank) * motionBlend;
-    jumpStretch += ((s.grounded ? 0 : Math.min(.1, Math.abs(s.velocity.y) * .011)) - jumpStretch) * blend;
+    jumpStretch += ((s.grounded ? 0 : Math.min(.15, Math.abs(s.velocity.y) * .019)) - jumpStretch) * blend;
     const step = Math.sin(walkClock) * walkBlend * (1 - airBlend);
-    avatar.position.y = Math.abs(step) * .035 + (1 - walkBlend) * (1 - airBlend) * Math.sin(t * 2.1) * .012;
-    avatar.scale.set(1 + landing * .13 - jumpStretch * .4, 1 - landing * .17 + jumpStretch, 1 + landing * .13 - jumpStretch * .4);
-    avatar.rotation.x += ((walkBlend * .08 * (1 - airBlend) - airBlend * .08) - avatar.rotation.x) * blend;
-    avatar.rotation.z = turnBank;
-    limbTargets[0] = step * .62 - airBlend * .35; limbTargets[1] = -step * .55 - airBlend * .65;
-    limbTargets[2] = -step * .62 + airBlend * .45; limbTargets[3] = step * .55 - airBlend * .65;
-    for (let i = 0; i < limbs.length; i++) limbs[i].rotation.x += (limbTargets[i] - limbs[i].rotation.x) * blend;
-    limbs[1].rotation.z += (.09 + airBlend * .36 - limbs[1].rotation.z) * blend;
-    limbs[3].rotation.z += (-.09 - airBlend * .36 - limbs[3].rotation.z) * blend;
-    scarf.rotation.x += (-.2 - Math.sin(t * 9) * (.035 + walkBlend * .065) - walkBlend * .24 - airBlend * .15 - scarf.rotation.x) * motionBlend;
-    scarf.rotation.z += (turnBank * 1.6 + Math.sin(t * 4) * .025 - scarf.rotation.z) * motionBlend;
+    const idle = (1 - walkBlend) * (1 - airBlend), breath = Math.sin(t * 2.4);
+    const greetingPhase = Math.max(0, restingTime - 1.6) % 5.8;
+    const greeting = restingTime > 1.6 && greetingPhase < 1.8 ? Math.sin(greetingPhase / 1.8 * Math.PI) ** 2 * idle : 0;
+    const rise = THREE.MathUtils.clamp((s.velocity.y + 1) / 7, 0, 1);
+    avatar.position.y = Math.abs(step) * .105 + idle * (.025 + breath * .025);
+    avatar.position.x = idle * Math.sin(t * 1.6) * .026;
+    avatar.scale.set(1 + landing * .17 - jumpStretch * .4, 1 - landing * .23 + jumpStretch + idle * breath * .018, 1 + landing * .17 - jumpStretch * .4);
+    avatar.rotation.x += ((walkBlend * .14 * (1 - airBlend) - airBlend * .09 + idle * breath * .025) - avatar.rotation.x) * blend;
+    avatar.rotation.z = turnBank + idle * Math.sin(t * 1.6) * .035;
+    limbTargets[0] = step * 1.02 - airBlend * (.15 + rise * .65);
+    limbTargets[2] = -step * 1.02 + airBlend * (.18 + rise * .5);
+    limbTargets[1] = -step * .98 - airBlend * (1.15 + rise * .6) + idle * breath * .09;
+    limbTargets[3] = step * .98 - airBlend * (1.15 + rise * .6) - idle * breath * .09 - greeting * 1.9;
+    for (let i = 0; i < limbs.length; i++) limbs[i].rotation.x += (limbTargets[i] - limbs[i].rotation.x) * limbBlend;
+    limbs[1].rotation.z += (-.12 - airBlend * .55 - limbs[1].rotation.z) * blend;
+    limbs[3].rotation.z += (.12 + airBlend * .55 + greeting * (.55 + Math.sin(t * 12) * .18) - limbs[3].rotation.z) * blend;
+    scarf.rotation.x += (-.2 - Math.sin(t * 9) * (.075 + walkBlend * .12) - walkBlend * .38 - airBlend * .25 - scarf.rotation.x) * motionBlend;
+    scarf.rotation.z += (turnBank * 1.6 + Math.sin(t * 4) * (.07 + walkBlend * .05) - scarf.rotation.z) * motionBlend;
     const blinkPhase = (t + 1.1) % 4.3;
     eyes.scale.y = blinkPhase < .17 ? 1 - Math.sin(blinkPhase / .17 * Math.PI) * .9 : 1;
     let floor=-8;
@@ -594,14 +630,16 @@ export function createView(container: HTMLElement) {
       }
     }
     shadow.visible=floor>-7;shadow.position.set(p.x,floor+.08,p.z);shadow.scale.setScalar(Math.max(.5,1-(p.y-floor)*.07));
-    updatePickups(s,t,dt); updateTrees(t); updateClouds(t); updateAnchors(t);
-    enemy.position.set(s.enemy==='captured'?cage.position.x:LANDMARKS.enemy.x+(s.enemy==='warning'?Math.sin(t*26)*.08:Math.sin(t*1.2)*.18),LANDMARKS.enemy.y+(s.enemy==='captured'?.23:Math.sin(t*5)*.025),s.enemy==='captured'?cage.position.z:LANDMARKS.enemy.z);
+    updatePickups(s,t,dt); updateTrees(t); updateClouds(t); updateAnchors(t); updateFlowers(t);
+    enemy.position.set(s.enemy==='captured'?cage.position.x:LANDMARKS.enemy.x+(s.enemy==='warning'?Math.sin(t*26)*.08:Math.sin(t*1.8)*.32),LANDMARKS.enemy.y+(s.enemy==='captured'?.23+Math.abs(Math.sin(t*3))*.055:Math.abs(Math.sin(t*5))*.06),s.enemy==='captured'?cage.position.z:LANDMARKS.enemy.z);
+    enemy.rotation.y = s.enemy === 'captured' ? Math.sin(t * 2) * .1 : Math.sin(t * 1.8) * .16;
+    enemy.rotation.z = Math.sin(t * 5) * .035;
     enemy.scale.setScalar(s.enemy==='captured'?.65:1);
     blades.forEach((b,i)=>{b.rotation.y=(i?1:-1)*(s.enemy==='warning'?.65+Math.sin(t*16)*.25:.27);});
     enemyGate.visible=s.enemy!=='captured';bossGate.visible=!s.canalOpen;
-    flower.rotation.z=Math.sin(t*1.7)*.06;
-    petals.forEach((petal,i)=>{const target=s.bossReady?.72+.1*Math.sin(t*6+i):.5;petal.scale.z+=(target-petal.scale.z)*blend;});
-    guardian.scale.y=1+Math.sin(t*1.7)*.025;
+    flower.rotation.z=Math.sin(t*1.7)*.13;
+    petals.forEach((petal,i)=>{const target=s.bossReady?.72+.1*Math.sin(t*6+i):.5;petal.scale.z+=(target-petal.scale.z)*blend;petal.rotation.x=Math.sin(t*2.2+i*.5)*.13;});
+    guardian.scale.y=1+Math.sin(t*1.7)*.045;
     goalSpool.rotation.y=t*1.8;goalSpool.position.y=1.7+Math.sin(t*2.3)*.15;water.visible=s.canalOpen;
     launchRing.rotation.z=t*.7;launchRing.material=s.bossReady?glow:gold;
     trajectory.visible=s.pair===2&&s.taut&&(aiming||s.bossReady);

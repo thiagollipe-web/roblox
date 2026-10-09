@@ -199,7 +199,9 @@ async function boot() {
       while (accumulator >= fixedStep) {
         motion.capture(game.state.position);
         const deaths = game.state.deaths;
-        game.update(fixedStep, { x: aiming ? 0 : x, z: aiming ? 0 : z, jump: jumpQueued });
+        // Inputs use screen directions. With the camera looking toward +Z,
+        // screen-right is world -X. Convert once for keys, touch and gamepad.
+        game.update(fixedStep, { x: aiming ? 0 : -x, z: aiming ? 0 : z, jump: jumpQueued });
         if (game.state.deaths !== deaths) motion.reset(game.state.position);
         jumpQueued = false; accumulator -= fixedStep;
       }

@@ -14,7 +14,7 @@ npm run build:html
 
 Abra `../prototipo/BAINHA.html` com Chrome ou Edge. O HTML incorpora código, estilos, física WASM e avisos de licença; não precisa de internet. Requer WebGL2 e WebAssembly disponíveis no navegador. No celular, prefira o link publicado, pois alguns gerenciadores de arquivos abrem HTML em uma prévia sem JavaScript.
 
-- PC: **WASD/setas** para mover, **Espaço** para saltar, **E** para costurar/tensionar/liberar, **Esc** para cancelar a seleção ou pausar.
+- PC: **WASD/setas** para mover na direção indicada na tela, **Espaço** para saltar, **E** para costurar/tensionar/liberar, **Esc** para cancelar a seleção ou pausar.
 - Celular: na área circular inferior, **arraste** para mover; durante o movimento, **empurre mais para cima** para saltar sem tirar o polegar. Retorne à região central do controle antes de repetir o gesto. Um toque rápido também salta; **segure parado e solte** para usar a fita. Durante a pressão, arrastar para baixo cancela. Os botões de salto e costura oferecem outra forma de jogar.
 - Gamepad: analógico esquerdo, botão inferior para salto e gatilho direito para costura. Mapeamento implementado; hardware físico ainda não verificado.
 
@@ -22,7 +22,7 @@ Abra `../prototipo/BAINHA.html` com Chrome ou Edge. O HTML incorpora código, es
 
 O menu de pausa oferece **Gráficos → Automáticos / Mais detalhes / Mais desempenho**. O modo automático adapta a resolução quando o navegador fica lento por um período sustentado; o modo de desempenho reduz o custo de sombras e resolução. A preferência vale para a sessão atual.
 
-O cenário usa objetos repetidos em lotes, iluminação com sombras seletivas e geometrias de fita preparadas antecipadamente. O personagem tem transições suaves entre corrida, salto e pouso. Os shaders são preparados durante a abertura para reduzir engasgos na primeira interação.
+O cenário usa objetos repetidos em lotes, iluminação com sombras seletivas e geometrias de fita preparadas antecipadamente. A personagem balança braços e pernas na corrida, muda a postura no salto, comprime o corpo ao pousar e acena após um tempo em repouso. Árvores, flores, nuvens e coletáveis também se movimentam. Os shaders são preparados durante a abertura para reduzir engasgos na primeira interação.
 
 ## Percurso
 
@@ -41,6 +41,8 @@ Quedas devolvem ao último apoio e preservam mecanismos já resolvidos. O menu d
 - `src/motion.ts`: interpola a posição visual entre passos da física para manter movimento contínuo em telas de diferentes frequências. Reinícios, quedas e mudanças de apoio redefinem a interpolação.
 - `index.html` / `src/style.css`: interface responsiva em português, com área central livre para ver os pousos.
 - `scripts/standalone.mjs`: incorpora o build, estilos, física WASM e licenças em um HTML único, sem recursos externos.
+
+Teclado, toque e gamepad usam direções de tela e passam pela mesma conversão antes da física. Como a câmera olha para o sentido positivo de Z, direita na tela corresponde ao sentido negativo de X no mundo; o desenho do joystick mantém as coordenadas de tela.
 
 ## Desenvolvimento
 
@@ -74,6 +76,14 @@ python3 tests/browser-smoke.py
 ```
 
 O padrão verifica desktop e retrato. Use `BAINHA_DEVICE=desktop` ou `BAINHA_DEVICE=portrait` para repetir somente um perfil, e `BAINHA_ARTIFACTS` para escolher a pasta de evidências. Capturas e resultados não devem ser publicados junto ao jogo.
+
+Para verificar especificamente as direções de tela e a animação ao longo do tempo:
+
+```sh
+python3 tests/controls-animation-smoke.py
+```
+
+Esse teste projeta o deslocamento pela câmera real, verifica setas/WASD e arrastos laterais e captura poses de repouso, corrida e salto. A cobertura de gamepad usa uma entrada emulada, sem substituir o teste em um controle físico.
 
 Para verificar o arquivo único com a rede desabilitada:
 

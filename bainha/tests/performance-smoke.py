@@ -122,17 +122,19 @@ async def profile(browser, name, url, output, quality):
             await cdp.send('Input.dispatchTouchEvent',{'type':kind,'touchPoints':points})
         start=asyncio.create_task(touch('touchStart'))
         await asyncio.sleep(.016)
-        move=asyncio.create_task(touch('touchMove',42))
+        # The chase camera faces +Z, so screen-left moves toward world +X.
+        # Keep the benchmark's world-space route unchanged after the input fix.
+        move=asyncio.create_task(touch('touchMove',-42))
         await asyncio.gather(start,move)
         assert not (await snapshot(page))['aiming'],'Touch driver accidentally long-pressed'
         for i,target in enumerate([2,-2,2,-2,0]):
-            if i: await touch('touchMove',42 if target>=0 else -42)
+            if i: await touch('touchMove',-42 if target>=0 else 42)
             await wait_state(page,f's.position.x {">=" if target>=0 else "<="} {target}')
             endpoints.append(await snapshot(page))
         await touch('touchEnd')
     else:
         for target in [2,-2,2,-2,0]:
-            key='d' if target>=0 else 'a'
+            key='a' if target>=0 else 'd'
             await page.keyboard.down(key)
             await wait_state(page,f's.position.x {">=" if target>=0 else "<="} {target}')
             await page.keyboard.up(key)
