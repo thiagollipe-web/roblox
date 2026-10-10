@@ -56,6 +56,20 @@ export function createView(container: HTMLElement) {
   const glow = new THREE.MeshBasicMaterial({ color: '#fff9cb' });
   const ribbonMaterial = new THREE.MeshStandardMaterial({ color: '#ff7c92', emissive: '#f35370', emissiveIntensity: .12, roughness: .4, metalness: .05, side: THREE.DoubleSide });
   const waterMaterial = new THREE.MeshStandardMaterial({ color: '#47dff3', emissive: '#138cae', emissiveIntensity: .15, roughness: .17, metalness: .2 });
+  // A tiny woven pattern gives the handmade garden a tactile finish without
+  // external images, bump maps or another render pass. The modulation is subtle
+  // enough to remain calm when a small mobile viewport minifies the texture.
+  const weaveData = new Uint8Array(32 * 32 * 4);
+  for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+    const thread = x % 8 === 0 || y % 8 === 0;
+    const value = thread ? 233 : 248 + ((x * 7 + y * 11) % 7);
+    const offset = (y * 32 + x) * 4;
+    weaveData[offset] = weaveData[offset + 1] = weaveData[offset + 2] = value; weaveData[offset + 3] = 255;
+  }
+  const weave = new THREE.DataTexture(weaveData, 32, 32, THREE.RGBAFormat);
+  weave.colorSpace = THREE.SRGBColorSpace; weave.wrapS = weave.wrapT = THREE.RepeatWrapping;
+  weave.minFilter = THREE.LinearMipmapLinearFilter; weave.magFilter = THREE.LinearFilter; weave.generateMipmaps = true; weave.needsUpdate = true;
+  for (const material of [cream, coral, teal, blue, cyan, petalBlue, ribbonMaterial]) material.map = weave;
   const geometries = new Map<string, THREE.BufferGeometry>();
   const sphereGeometry = new THREE.SphereGeometry(1, 16, 12);
   const detailGeometry = new THREE.SphereGeometry(1, 8, 6);
@@ -90,6 +104,31 @@ export function createView(container: HTMLElement) {
   }
   function hoop(x: number, y: number, z: number, r: number, material: THREE.Material, parent: THREE.Object3D = scene) {
     const result = mesh(torusGeometry, material, x, y, z, parent); result.scale.setScalar(r); return result;
+  }
+  function pebble(x: number, y: number, z: number, sx: number, sy: number, sz: number, material: THREE.Material, parent: THREE.Object3D) {
+    const result = mesh(detailGeometry, material, x, y, z, parent); result.scale.set(sx, sy, sz); return result;
+  }
+  function stitchedEdge(x: number, y: number, z: number, length: number, parent: THREE.Object3D) {
+    const count = Math.max(2, Math.floor(length / .7));
+    for (let i = 0; i < count; i++) {
+      const stitch = box(x, y, z - length / 2 + (i + .5) * length / count, .025, .045, .13, cream, parent);
+      stitch.rotation.x = i % 2 ? .38 : -.38;
+    }
+  }
+  function earthStratum(x: number, top: number, z: number, length: number, parent: THREE.Object3D) {
+    const positions: number[] = [], indices: number[] = [], sections = Math.ceil(length * 2);
+    for (let i = 0; i <= sections; i++) {
+      const along = z - length / 2 + length * i / sections;
+      const wave = Math.sin(along * 1.25) * .07 + Math.sin(along * 2.8) * .035;
+      positions.push(x, top - 1.05 + wave, along, x, top - .88 + wave, along);
+      if (i < sections) { const j = i * 2; indices.push(j, j + 2, j + 1, j + 1, j + 2, j + 3); }
+    }
+    const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setIndex(indices); geometry.computeVertexNormals();
+    // Match the stock mesh attributes so this ribbon merges into the existing
+    // earth-band draw call together with each island's rounded lower edge.
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array((sections + 1) * 4), 2));
+    mesh(geometry, earthBand, 0, 0, 0, parent);
   }
   function link(a: THREE.Vector3, b: THREE.Vector3, r: number, material: THREE.Material, parent: THREE.Object3D = scene) {
     const result = cylinder(0, 0, 0, r, a.distanceTo(b), material, parent);
@@ -147,19 +186,27 @@ export function createView(container: HTMLElement) {
       // that would imply a solid wall to a character jumping up from below.
       box(c.x, top - thickness / 2, c.z, s.x, thickness, s.z, cream, zone, .055);
       box(c.x, top + .015, c.z, s.x + .05, .06, s.z + .05, grass, zone, .025);
-      box(c.x - s.x / 2 - .02, top - .11, c.z, .04, .09, s.z - .2, gold, zone);
+      box(c.x - s.x / 2 - .02, top - .11, c.z, .04, .11, s.z - .12, coral, zone);
+      stitchedEdge(c.x - s.x / 2 - .045, top - .11, c.z, s.z - .25, zone);
       continue;
     }
     box(c.x, top - thickness / 2 - .12, c.z, s.x, thickness, s.z, earth, zone, .17);
     box(c.x, top - thickness + .15, c.z, s.x + .02, .3, s.z + .02, earthBand, zone, .1);
     box(c.x, top - .15, c.z, s.x + .16, .3, s.z + .16, grassEdge, zone, .11);
     box(c.x, top - .025, c.z, s.x + .12, .16, s.z + .12, grass, zone, .07);
+    earthStratum(c.x - s.x / 2 - .014, top, c.z, s.z - .35, zone);
+    stitchedEdge(c.x - s.x / 2 - .025, top - .53, c.z, s.z - .45, zone);
+    const trimCount = Math.ceil(s.z / .58);
+    for (let j = 0; j < trimCount; j++) {
+      const along = c.z - s.z / 2 + (j + .5) * s.z / trimCount;
+      pebble(c.x - s.x / 2 - .01, top - .18, along, .14, .12 + (j % 3) * .025, .31, j % 3 ? grassEdge : grass, zone);
+    }
     // Raised platforms are edged in a sunlit band, making their height easy to read.
     if (s.z < 5.1) box(c.x - s.x / 2 - .012, top - .43, c.z, .025, .15, s.z - .35, path, zone);
     if (s.x >= 4 && s.z >= 6) {
       const tiles = Math.floor(s.z / 1.7);
       for (let j = 0; j < tiles; j++) {
-        const stone = box(c.x + Math.sin(j * 1.4) * .25, top + .07, c.z - s.z / 2 + 1 + j * 1.7, 1.6, .045, 1.28, path, zone, .02);
+        const stone = pebble(c.x + Math.sin(j * 1.4) * .25, top + .065, c.z - s.z / 2 + 1 + j * 1.7, .72, .075, .54, path, zone);
         stone.rotation.y = .07 * Math.sin(j * 3);
       }
       tree(c.x + s.x / 2 - .25, top, c.z + s.z * .2, .86);
@@ -167,13 +214,18 @@ export function createView(container: HTMLElement) {
       for (let side of [-1, 1]) for (let i = 0; i < 7; i++) {
         flowers.push({ x:c.x + side * (s.x / 2 - .55 - .27 * (i % 3)), y:top + .17, z:c.z - s.z / 2 + .7 + i * (s.z - 1.4) / 7, s:.12 + .04 * (i % 2) });
       }
-      // Rounded embedded stones add scale and readable earth strata without textures.
-      for (let j = 0; j < 5; j++) sphere(c.x - s.x / 2 - .02, top - .67, c.z - s.z / 2 + .7 + j * (s.z - 1.4) / 4, .055, .15, .23, path, zone);
+      // Small mineral flecks sit between the hand-sewn edge and the earth band.
+      for (let j = 0; j < 4; j++) pebble(c.x - s.x / 2 - .025, top - .73, c.z - s.z / 2 + .8 + j * (s.z - 1.6) / 3, .04, .045, .12, path, zone);
     }
   }
   for (const zone of terrainZones.values()) { shadows(zone); batchRigid(zone); }
   const flowerDots = new THREE.InstancedMesh(detailGeometry, pink, flowers.length * 4);
   const flowerCenters = new THREE.InstancedMesh(detailGeometry, gold, flowers.length);
+  const flowerTint = new THREE.Color();
+  flowers.forEach((_flower, i) => {
+    flowerTint.set(i % 3 === 0 ? '#fff7ec' : i % 3 === 1 ? '#ffc9de' : '#ffe6f0');
+    for (let j = 0; j < 4; j++) flowerDots.setColorAt(i * 4 + j, flowerTint);
+  });
   flowerDots.instanceMatrix.setUsage(THREE.DynamicDrawUsage); flowerCenters.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   const petalDirections = [1, 0, 0, 1, -1, 0, 0, -1];
   function updateFlowers(t: number) {
@@ -221,12 +273,13 @@ export function createView(container: HTMLElement) {
   // All crowns move through instance matrices: wind adds no per-tree draw calls.
   const treeParts = [
     { geometry: cylinderGeometry, material: trunk, position: [0, 1, 0], scale: [.19, 2, .19], crown: false },
-    { geometry: sphereGeometry, material: leaf, position: [0, .5, 0], scale: [1.15, 1.25, 1.1], crown: true },
-    { geometry: sphereGeometry, material: leaf, position: [-.58, .18, .05], scale: [.78, .85, .8], crown: true },
-    { geometry: sphereGeometry, material: leaf, position: [.58, .18, .12], scale: [.73, .8, .78], crown: true },
-    { geometry: sphereGeometry, material: leaf, position: [-.12, 1.05, -.02], scale: [.77, .7, .73], crown: true },
-    { geometry: detailGeometry, material: coral, position: [.72, .4, -.62], scale: [.16, .18, .16], crown: true },
-    { geometry: detailGeometry, material: coral, position: [-.4, .72, -.9], scale: [.15, .18, .15], crown: true },
+    // Lobes spread along the visible Z silhouette instead of stacking in depth.
+    { geometry: sphereGeometry, material: leaf, position: [0, .52, 0], scale: [1.03, 1.16, .9], crown: true },
+    { geometry: sphereGeometry, material: leafLight, position: [-.08, .26, -.43], scale: [.8, .7, .63], crown: true },
+    { geometry: sphereGeometry, material: leaf, position: [.05, .35, .46], scale: [.75, .83, .64], crown: true },
+    { geometry: sphereGeometry, material: leafLight, position: [0, 1.07, .06], scale: [.7, .63, .64], crown: true },
+    { geometry: detailGeometry, material: coral, position: [-.88, .4, -.35], scale: [.14, .16, .14], crown: true },
+    { geometry: detailGeometry, material: coral, position: [-.66, .72, .55], scale: [.13, .16, .13], crown: true },
   ];
   const treeBuckets = new Map<string, { geometry: THREE.BufferGeometry; material: THREE.Material; near: boolean; parts: { tree: number; crown: boolean; local: THREE.Matrix4 }[] }>();
   trees.forEach((tree, index) => treeParts.forEach(part => {
@@ -240,6 +293,13 @@ export function createView(container: HTMLElement) {
     const instances = new THREE.InstancedMesh(bucket.geometry, bucket.material, bucket.parts.length);
     instances.castShadow = bucket.near && bucket.material !== coral; instances.receiveShadow = bucket.near;
     instances.instanceMatrix.setUsage(THREE.DynamicDrawUsage); instances.frustumCulled = false;
+    if (bucket.material === leaf || bucket.material === leafLight) {
+      const tint = new THREE.Color();
+      bucket.parts.forEach((part, index) => {
+        tint.setRGB(.9 + (part.tree % 3) * .05, .96 + (part.tree % 2) * .04, .87 + (part.tree % 4) * .035);
+        instances.setColorAt(index, tint);
+      });
+    }
     scene.add(instances); return { ...bucket, instances };
   });
   const crownMatrices = trees.map(() => new THREE.Matrix4()), instanceMatrix = new THREE.Matrix4();
@@ -287,30 +347,37 @@ export function createView(container: HTMLElement) {
   sphere(0, 1.22, .025, .38, .37, .33, skin, avatar);
   sphere(-.37, 1.21, .015, .082, .12, .1, skin, avatar); sphere(.37, 1.21, .015, .082, .12, .1, skin, avatar);
   sphere(0, 1.45, -.06, .4, .22, .35, cream, avatar);
-  sphere(-.24, 1.35, .04, .16, .25, .25, cream, avatar);
+  sphere(-.24, 1.35, -.08, .14, .24, .21, cream, avatar);
   sphere(.13, 1.49, .2, .24, .15, .19, cream, avatar);
+  const hairClip = box(-.36, 1.40, .07, .035, .07, .17, coral, avatar); hairClip.rotation.x = -.32;
   // Eyes face +Z; the menu pose turns toward the side camera.
   const eyes = new THREE.Group(); eyes.position.y = 1.25; avatar.add(eyes);
   for (const side of [-1, 1]) {
-    sphere(side * .13, 0, .31, .075, .105, .035, white, eyes);
-    sphere(side * .13, .005, .341, .041, .064, .019, dark, eyes);
-    sphere(side * .13 - .009, .03, .357, .011, .017, .008, white, eyes);
-    sphere(side * .245, 1.15, .272, .065, .036, .027, coral, avatar);
+    sphere(side * .245, 0, .24, .075, .105, .075, white, eyes);
+    sphere(side * .302, .005, .273, .033, .064, .029, dark, eyes);
+    sphere(side * .325, .03, .288, .01, .017, .01, white, eyes);
+    sphere(side * .30, 1.15, .19, .036, .039, .066, coral, avatar);
   }
-  sphere(0, 1.18, .35, .06, .055, .06, skin, avatar);
+  sphere(0, 1.18, .35, .07, .06, .075, skin, avatar);
   const smile = hoop(0, 1.10, .322, .053, dark, avatar); smile.scale.y *= .47;
   cylinder(0, .98, 0, .3, .13, coral, avatar);
   const scarf = box(0, .96, -.42, .23, .09, .67, coral, avatar, .035); scarf.rotation.x = -.2; scarf.userData.animated = true;
   sphere(0, .78, -.285, .27, .3, .16, blue, avatar);
+  box(0, .72, .312, .23, .045, .02, cream, avatar);
   const packSpool = cylinder(0, .83, -.43, .17, .3, gold, avatar); packSpool.rotation.z = Math.PI / 2;
-  for (const side of [-1, 1]) { const rim = cylinder(side * .18, .83, -.43, .235, .055, cream, avatar); rim.rotation.z = Math.PI / 2; }
+  for (const side of [-1, 1]) {
+    const rim = cylinder(side * .18, .83, -.43, .235, .055, cream, avatar); rim.rotation.z = Math.PI / 2;
+    const hub = cylinder(side * .213, .83, -.43, .066, .018, coral, avatar); hub.rotation.z = Math.PI / 2;
+  }
   const limbs: THREE.Group[] = [];
   for (const side of [-1, 1]) {
     const leg = new THREE.Group(); leg.position.set(side * .18, .43, 0); avatar.add(leg);
     sphere(0, -.08, 0, .13, .22, .13, blue, leg);
-    sphere(0, -.32, .065, .18, .12, .26, boot, leg); limbs.push(leg);
+    sphere(0, -.32, .065, .18, .12, .26, boot, leg);
+    box(0, -.412, .05, .29, .045, .4, blue, leg); limbs.push(leg);
     const arm = new THREE.Group(); arm.position.set(side * .37, .85, 0); avatar.add(arm);
     sphere(side * .025, -.1, 0, .12, .22, .13, teal, arm);
+    cylinder(side * .032, -.225, .02, .127, .065, cream, arm);
     sphere(side * .035, -.29, .03, .12, .14, .12, cream, arm); limbs.push(arm);
   }
   // Major character shapes cast shadows; eyes and tiny metal fittings do not.
@@ -392,15 +459,18 @@ export function createView(container: HTMLElement) {
   sphere(0, .53, 0, .66, .47, .58, blue, enemy);
   sphere(0, .67, .09, .54, .32, .48, teal, enemy);
   box(0, .81, 0, .07, .12, .94, gold, enemy, .03);
+  for (let i = 0; i < 3; i++) box(-.626, .53, (i - 1) * .2, .025, .045, .12, teal, enemy);
   for (const side of [-1, 1]) {
-    sphere(side * .23, .61, -.43, .16, .18, .12, white, enemy);
-    sphere(side * .23, .61, -.54, .075, .095, .035, dark, enemy);
+    sphere(side * .48, .64, -.33, .14, .17, .14, white, enemy);
+    sphere(side * .592, .64, -.37, .035, .085, .065, dark, enemy);
     for (let i=0;i<3;i++) sphere(side * .6, .14, (i - 1) * .32, .2, .12, .15, dark, enemy);
   }
   const blades: THREE.Mesh[] = [];
   for (const side of [-1, 1]) {
-    const blade = box(side * .2, .35, -.85, .11, .1, .67, cream, enemy, .045); blade.rotation.y = side * .4; blade.userData.animated = true; blades.push(blade);
-    hoop(side * .28, .35, -.53, .16, gold, enemy).rotation.x = Math.PI / 2;
+    // Scissors open in the visible Y/Z plane; their warning can be read from
+    // the side camera instead of both blades hiding behind one another.
+    const blade = box(-.42, .38 + side * .11, -.85, .11, .1, .67, cream, enemy, .045); blade.rotation.x = side * .28; blade.userData.animated = true; blades.push(blade);
+    hoop(-.42, .38 + side * .14, -.53, .14, gold, enemy).rotation.y = Math.PI / 2;
   }
   enemy.traverse(child => { if (child instanceof THREE.Mesh) { child.receiveShadow = true; child.castShadow = child.material === blue || child.material === teal; } });
   batchRigid(enemy);
@@ -438,10 +508,18 @@ export function createView(container: HTMLElement) {
     sphere(side*.55,.3,-.2,.9,.35,1.0,leaf,guardian);
   }
   const flower = new THREE.Group(); flower.position.set(0,4.0,0); guardian.add(flower);
+  const petalGeometry = sphereGeometry.clone();
+  const petalPositions = petalGeometry.getAttribute('position');
+  for (let i = 0; i < petalPositions.count; i++) {
+    const y = petalPositions.getY(i), x = petalPositions.getX(i), z = petalPositions.getZ(i);
+    // Soft pointed tips and a cupped surface replace uniformly round balloons.
+    petalPositions.setXYZ(i, x * (.68 + .32 * (1 - y * y)), y, z + .16 * y * y);
+  }
+  petalGeometry.computeVertexNormals();
   const petals: THREE.Object3D[] = [];
   for(let i=0;i<8;i++) {
     const a=i*Math.PI/4;
-    const petal = sphere(Math.sin(a)*1.65,Math.cos(a)*1.65,0,.85,1.25,.5,i%2?cyan:petalBlue,flower);
+    const petal = mesh(petalGeometry,i%2?cyan:petalBlue,Math.sin(a)*1.65,Math.cos(a)*1.65,0,flower); petal.scale.set(.85,1.25,.5);
     petal.rotation.z=-a; petal.userData.animated = true; petals.push(petal);
   }
   sphere(0,0,-.23,1.22,1.22,.6,gold,flower);
@@ -449,6 +527,7 @@ export function createView(container: HTMLElement) {
     sphere(side*.4,.12,-.76,.25,.3,.08,white,flower);
     sphere(side*.4,.12,-.84,.12,.18,.04,dark,flower);
     sphere(side*.73,-.31,-.72,.22,.1,.05,coral,flower);
+    const brow = box(side*.4,.54,-.77,.3,.075,.045,dark,flower); brow.rotation.z=-side*.17;
   }
   const guardianSmile = hoop(0,-.43,-.81,.24,dark,flower); guardianSmile.scale.y*=.5;
   shadows(guardian, false, true);
@@ -588,7 +667,7 @@ export function createView(container: HTMLElement) {
       const variants: THREE.Object3D[] = [...ribbonVariants.values(), pulse, trajectory, confetti, water];
       const visibility = variants.map(item => item.visible);
       variants.forEach(item => { item.visible = true; });
-      renderer.initTexture(sky); renderer.initTexture(shadowTexture);
+      renderer.initTexture(sky); renderer.initTexture(shadowTexture); renderer.initTexture(weave);
       try {
         for (const cast of [false, true]) {
           light.castShadow = cast;
@@ -672,10 +751,16 @@ export function createView(container: HTMLElement) {
     enemy.rotation.y = s.enemy === 'captured' ? Math.sin(t * 2) * .1 : Math.sin(t * 1.8) * .16;
     enemy.rotation.z = Math.sin(t * 5) * .035;
     enemy.scale.setScalar(s.enemy==='captured'?.65:1);
-    blades.forEach((b,i)=>{b.rotation.y=(i?1:-1)*(s.enemy==='warning'?.65+Math.sin(t*16)*.25:.27);});
+    blades.forEach((b,i)=>{b.rotation.x=(i?1:-1)*(s.enemy==='warning'?.65+Math.sin(t*16)*.25:.27);});
     enemyGate.visible=s.enemy!=='captured';bossGate.visible=!s.canalOpen;
     flower.rotation.z=Math.sin(t*1.7)*.13;
-    petals.forEach((petal,i)=>{const target=s.bossReady?.72+.1*Math.sin(t*6+i):.5;petal.scale.z+=(target-petal.scale.z)*blend;petal.rotation.x=Math.sin(t*2.2+i*.5)*.13;});
+    petals.forEach((petal,i)=>{
+      const target=s.bossReady?.72+.1*Math.sin(t*6+i):.5;
+      petal.scale.z+=(target-petal.scale.z)*blend;petal.rotation.x=Math.sin(t*2.2+i*.5)*.13;
+      const a=i*Math.PI/4, radius=s.bossReady?1.76:1.65;
+      petal.position.x+=(Math.sin(a)*radius-petal.position.x)*blend;
+      petal.position.y+=(Math.cos(a)*radius-petal.position.y)*blend;
+    });
     guardian.scale.y=1+Math.sin(t*1.7)*.045;
     goalSpool.rotation.y=t*1.8;goalSpool.position.y=1.7+Math.sin(t*2.3)*.15;water.visible=s.canalOpen;
     launchRing.rotation.z=t*.7;launchRing.material=s.bossReady?glow:gold;

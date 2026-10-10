@@ -88,7 +88,7 @@ async def begin_camera_trace(page):
           const cx=m[0]*p.x+m[4]*y+m[8]*p.z+m[12];
           const cy=m[1]*p.x+m[5]*y+m[9]*p.z+m[13];
           const cw=m[3]*p.x+m[7]*y+m[11]*p.z+m[15];
-          trace.frames.push({elapsed:s.elapsed,hero:[(cx/cw+1)*innerWidth/2,(1-cy/cw)*innerHeight/2],cameraY:r.camera.position.y,feetY:p.y,grounded:s.grounded});
+          trace.frames.push({elapsed:s.elapsed,viewport:[innerWidth,innerHeight],hero:[(cx/cw+1)*innerWidth/2,(1-cy/cw)*innerHeight/2],cameraY:r.camera.position.y,feetY:p.y,grounded:s.grounded});
         }
         requestAnimationFrame(sample);
       }
@@ -97,15 +97,14 @@ async def begin_camera_trace(page):
 
 async def check_camera_trace(page):
     trace=await page.evaluate('()=>{window.__routeCameraQA.active=false;return window.__routeCameraQA.frames;}')
-    width,height=page.viewport_size['width'],page.viewport_size['height']
     bounds={'left':min(t['hero'][0] for t in trace),'right':max(t['hero'][0] for t in trace),
         'top':min(t['hero'][1] for t in trace),'bottom':max(t['hero'][1] for t in trace)}
     largest_step=max(abs(b['cameraY']-a['cameraY']) for a,b in zip(trace,trace[1:]))
-    report['mobile_camera_trace']={'frames':len(trace),'hero_center_bounds_px':bounds,'largest_vertical_camera_step':largest_step,'maximum_launch_height':max(t['feetY'] for t in trace)}
+    report['mobile_camera_trace']={'frames':len(trace),'hero_center_bounds_px':bounds,'largest_vertical_camera_step':largest_step,'maximum_launch_height':max(t['feetY'] for t in trace),'sampled_viewports':sorted({tuple(t['viewport']) for t in trace})}
     (OUT/'mobile-camera-trace.json').write_text(json.dumps(trace,indent=2))
     await check('mobile route keeps jumps and launch visible with continuous camera tracking',page,
-        bounds['left']>20 and bounds['right']<width-20 and bounds['top']>20
-        and bounds['bottom']<height-20 and largest_step<.65)
+        all(20<t['hero'][0]<t['viewport'][0]-20 and 20<t['hero'][1]<t['viewport'][1]-20 for t in trace)
+        and largest_step<.65)
 
 async def move_keyboard(page, z):
     await page.keyboard.down('d')
@@ -170,7 +169,8 @@ class Touch:
                     const state = window.__BAINHA__.snapshot();
                     window.__touchQA.push({type, target:event.target.id,
                         timestamp:event.timeStamp, delivered:performance.now(),
-                        aiming:state.aiming, paused:state.paused});
+                        aiming:state.aiming, paused:state.paused,
+                        position:{...state.position}, velocity:{...state.velocity}});
                 }, true);
             }
         }''')
@@ -203,6 +203,27 @@ class Touch:
         await assert_condition(self.page, 0 <= gap < 220, f'Injected drag arrived too slowly: {gap} ms')
         report.setdefault('drag_input_gaps_ms', []).append(gap)
         await assert_condition(self.page, not (await snap(self.page))['aiming'], 'Immediate drag was classified as aim')
+
+    async def center_on_platform(self, center, minimum_height):
+        """Correct software/CDP release overshoot with ordinary slow steering."""
+        before = await snap(self.page)
+        for _ in range(3):
+            state = await snap(self.page)
+            if abs(state['position']['z'] - center) <= .65:
+                break
+            direction = 1 if state['position']['z'] < center else -1
+            await self.start_move(direction=direction, distance=12)
+            try:
+                target = center - .2 if direction > 0 else center + .2
+                await wait(self.page, f's.position.z {">=" if direction>0 else "<="} {target}', 10000)
+            finally:
+                await self.send('touchEnd')
+            await wait(self.page, 's.grounded && Math.abs(s.velocity.z)<.01')
+        after = await snap(self.page)
+        report.setdefault('native_landing_corrections', []).append({'center':center,'before':before['position'],'after':after['position']})
+        await assert_condition(self.page, after['deaths']==before['deaths']
+            and after['grounded'] and after['position']['y']>minimum_height
+            and abs(after['position']['z']-center)<=.8, f'Could not center on platform at z={center}')
 
     async def center_on_launch(self):
         """Correct CDP delivery/coasting overshoot using normal slow steering.
@@ -389,11 +410,13 @@ async def main():
                 await check('portrait one-thumb tap jump', page)
                 await wait(page, 's.grounded')
                 await touch.jump_to(3.5, 6.95, .9)
+                await touch.center_on_platform(7.8, .6)
                 await check('portrait one-thumb flick jumps to first platform', page, (await snap(page))['position']['y'] > .6)
-                await touch.jump_to(8.6, 11.1, 1.6)
+                await touch.jump_to(8.6, 11.1, 1.6, precision=True)
+                await touch.center_on_platform(12, 1.2)
                 await capture(page, 'portrait-elevated-platforms')
                 await check('portrait one-thumb second elevated jump', page, (await snap(page))['position']['y'] > 1.2)
-                await touch.jump_to(12.9, 16.5, 1.6)
+                await touch.jump_to(12.9, 16.5, 1.6, precision=True)
                 await touch.move(22)
                 await check('portrait jump route and coin collection', page,
                     (await snap(page))['checkpoint'] == 1 and (await snap(page))['coins'] >= 4)
@@ -439,6 +462,13 @@ async def main():
                 await wait(page, 's.canalOpen')
                 await wait(page, 's.position.y>6')
                 await capture(page, 'portrait-launch-arc')
+                if DEVICE != 'portrait':
+                    # Resize through the narrow landscape layout during real flight.
+                    # Per-frame viewport sizes keep the read-only camera check valid.
+                    await page.set_viewport_size({'width':480,'height':320})
+                    await capture(page, 'landscape-launch-480x320')
+                    report['narrow_launch_state'] = await snap(page)
+                    await page.set_viewport_size(MOBILE_VIEWPORT)
                 await wait(page, 's.grounded && s.position.z > 63')
                 await check('portrait one-thumb launch/landing', page)
                 await touch.move(68)

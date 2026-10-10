@@ -36,6 +36,7 @@ async function boot() {
     kind: 'pending' | 'move' | 'aim'; cancel: boolean; dy: number; jumpLatched: boolean;
   } | null = null;
   let padJump = false, padTrigger = false, padPause = false, padAimArmed = false;
+  let padIdentity: string | null = null;
   let lastTouchX = 0, coastUntil = 0;
 
   function activeModal() {
@@ -240,6 +241,14 @@ async function boot() {
     if (pad && started && !game.state.won && !contextLost) {
       const pressedPause = !!pad.buttons[9]?.pressed;
       const pressedJump = !!pad.buttons[0]?.pressed, pressedTrigger = !!pad.buttons[7]?.pressed;
+      const identity = `${pad.index}:${pad.id}`;
+      if (padIdentity !== identity) {
+        // A held button on a newly connected controller is not a fresh press.
+        // Sample all action edges before accepting input from this connection.
+        if (padAimArmed) cancelAim();
+        padIdentity = identity;
+        padJump = pressedJump; padTrigger = pressedTrigger; padPause = pressedPause;
+      }
       if (pressedPause && !padPause) setPause(!paused);
       padPause = pressedPause;
       if (!paused) {
@@ -253,6 +262,7 @@ async function boot() {
     } else {
       if (padAimArmed) cancelAim();
       padJump = false; padTrigger = false; padPause = false; padAimArmed = false;
+      padIdentity = null;
     }
     x = Math.max(-1, Math.min(1, x));
     if (started && !paused && !game.state.won && !contextLost) {

@@ -157,17 +157,31 @@ export async function createGame(): Promise<Game> {
     const t = clamp((z - pair.a.z) / (pair.b.z - pair.a.z), 0, 1);
     return pair.a.y + (pair.b.y - pair.a.y) * t - (taut ? 0 : .6 * Math.sin(Math.PI * t));
   }
+  function addRibbonStrip(a: Vec3, b: Vec3) {
+    const dz = b.z - a.z, dy = b.y - a.y, angle = -Math.atan2(dy, dz);
+    ribbonColliders.push(world.createCollider(RAPIER.ColliderDesc.cuboid(1.15, .08, Math.hypot(dz, dy) / 2 + .015)
+      .setTranslation((a.x + b.x) / 2, (a.y + b.y) / 2 - .08, (a.z + b.z) / 2)
+      .setRotation({ x: Math.sin(angle / 2), y: 0, z: 0, w: Math.cos(angle / 2) })));
+  }
   function rebuildRibbon() {
     const lift = state.onRibbon && state.grounded && state.pair !== null;
     clearRibbon();
     if (state.pair === null) return;
     const pair = PAIRS[state.pair], points = ribbonPoints(pair, state.taut);
     for (let i = 0; i < points.length - 1; i++) {
-      const a = points[i], b = points[i + 1];
-      const dz = b.z - a.z, dy = b.y - a.y, angle = -Math.atan2(dy, dz);
-      ribbonColliders.push(world.createCollider(RAPIER.ColliderDesc.cuboid(1.15, .08, Math.hypot(dz, dy) / 2 + .015)
-        .setTranslation((a.x + b.x) / 2, (a.y + b.y) / 2 - .08, (a.z + b.z) / 2)
-        .setRotation({ x: Math.sin(angle / 2), y: 0, z: 0, w: Math.cos(angle / 2) })));
+      addRibbonStrip(points[i], points[i + 1]);
+    }
+    // Raised ends meet the floor under the anchor bases. These short slopes avoid
+    // a vertical lip that the character controller cannot step over at low speed.
+    for (const [endpoint, direction] of [[pair.a, -1], [pair.b, 1]] as const) {
+      const island = PLATFORMS.find(p => !p.oneWay && Math.abs(endpoint.z - p.center.z) < p.size.z / 2 &&
+        Math.abs(endpoint.x - p.center.x) < p.size.x / 2 && Math.abs(endpoint.y - p.center.y - p.size.y / 2) < .23);
+      if (!island) continue;
+      const top = island.center.y + island.size.y / 2;
+      if (endpoint.y <= top + .01) continue;
+      const approach = { x: endpoint.x, y: top,
+        z: clamp(endpoint.z + direction * .35, island.center.z - island.size.z / 2, island.center.z + island.size.z / 2) };
+      addRibbonStrip(direction < 0 ? approach : endpoint, direction < 0 ? endpoint : approach);
     }
     if (lift) setFeet(state.position.x, ribbonHeight(pair, state.position.z, state.taut) + .035, state.position.z);
   }

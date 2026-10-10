@@ -179,6 +179,8 @@ async def keyboard_and_pad(page):
     await check('fresh E still weaves exactly one bridge',True)
 
     await install_pad(page)
+    # A newly connected controller must first be observed with neutral buttons.
+    await after_time(page,.15)
     before=mechanisms(await snap(page))
     await pad_buttons(page,{7:True})
     await wait(page,'s.aiming')
@@ -219,6 +221,59 @@ async def keyboard_and_pad(page):
     await page.evaluate('window.__QA_PAD__.active=true')
     await after_time(page)
     await check('gamepad disconnect cancels an armed action',mechanisms(await snap(page))==before)
+
+    # Reconnection with a still-held button is not a fresh press. This emulates
+    # only the input provider; no game state, physics or renderer values change.
+    before=mechanisms(await snap(page))
+    await pad_buttons(page,{7:True})
+    await wait(page,'s.aiming')
+    await page.evaluate('window.__QA_PAD__.active=false')
+    await wait(page,'!s.aiming')
+    await page.evaluate('window.__QA_PAD__.active=true')
+    await after_time(page,.2)
+    reconnected=await snap(page)
+    await pad_buttons(page,{7:False})
+    await after_time(page,.2)
+    await check('held RT reconnect and release cannot restore a cancelled action',
+        not reconnected['aiming'] and mechanisms(await snap(page))==before)
+    await pad_buttons(page,{7:True})
+    await wait(page,'s.aiming')
+    await pad_buttons(page,{7:False})
+    await after_time(page,.2)
+    await check('fresh RT press after reconnect still performs one action',
+        mechanisms(await snap(page))!=before)
+
+    await pad_buttons(page,{0:True})
+    await wait(page,'!s.grounded && s.velocity.y>0')
+    await page.evaluate('window.__QA_PAD__.active=false')
+    await settle(page)
+    before=await snap(page)
+    await page.evaluate('window.__QA_PAD__.active=true')
+    await after_time(page,.25)
+    after=await snap(page)
+    await check('held A reconnect after landing cannot trigger another jump',
+        after['grounded'] and abs(after['position']['y']-before['position']['y'])<.02)
+    await pad_buttons(page,{0:False})
+    await after_time(page,.15)
+    await pad_buttons(page,{0:True})
+    await wait(page,'!s.grounded && s.velocity.y>0')
+    await pad_buttons(page,{0:False})
+    await settle(page)
+    await check('fresh A press after reconnect still jumps',True)
+
+    await pad_buttons(page,{9:True})
+    await wait(page,'s.paused')
+    await page.evaluate('window.__QA_PAD__.active=false')
+    await page.wait_for_timeout(200)
+    await page.evaluate('window.__QA_PAD__.active=true')
+    await page.wait_for_timeout(300)
+    await check('held Start reconnect cannot unpause the game',(await snap(page))['paused'])
+    await pad_buttons(page,{9:False})
+    await page.wait_for_timeout(150)
+    await pad_buttons(page,{9:True})
+    await wait(page,'!s.paused')
+    await pad_buttons(page,{9:False})
+    await check('fresh Start press after reconnect still resumes',True)
     await capture(page,'desktop-input-recovered')
 
 async def context_recovery(page):
@@ -276,13 +331,31 @@ class Touch:
         self.primary=None
 
 async def mobile_cases(page):
-    for width,height in [(568,320),(320,568),(844,390),(390,844)]:
+    for width,height in [(480,320),(568,320),(320,568),(844,390),(390,844)]:
         await page.set_viewport_size({'width':width,'height':height})
         await page.wait_for_timeout(120)
         geometry=await page.locator('#start').evaluate('(el)=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:innerWidth,height:innerHeight};}')
         await check(f'start button fits viewport {width}x{height}',geometry['x']>=0 and geometry['y']>=0 and geometry['right']<=width and geometry['bottom']<=height,geometry)
         if width==568:await capture(page,'compact-landscape-start')
     await start_low(page)
+    await page.set_viewport_size({'width':480,'height':320})
+    await page.wait_for_timeout(100)
+    geometry=await page.evaluate('''()=>{
+      const r=window.__BAINHA__.snapshot().render,p=r.camera.hero,m=r.camera.viewProjection,points=[];
+      for(const y of [0,1.8])for(const z of [-.55,.55]){
+        const a=p.x,b=p.y+y,c=p.z+z,w=m[3]*a+m[7]*b+m[11]*c+m[15];
+        points.push([(m[0]*a+m[4]*b+m[8]*c+m[12])/w*innerWidth/2+innerWidth/2,innerHeight/2-(m[1]*a+m[5]*b+m[9]*c+m[13])/w*innerHeight/2]);
+      }
+      const hero={left:Math.min(...points.map(p=>p[0])),right:Math.max(...points.map(p=>p[0])),top:Math.min(...points.map(p=>p[1])),bottom:Math.max(...points.map(p=>p[1]))};
+      const el=document.querySelector('#toast'),b=el.getBoundingClientRect(),toast={left:b.left,right:b.right,top:b.top,bottom:b.bottom,hidden:el.hidden};
+      return {hero,toast,overlap:hero.left<toast.right&&hero.right>toast.left&&hero.top<toast.bottom&&hero.bottom>toast.top};
+    }''')
+    await check('480x320 message fits and leaves the character unobscured',
+        not geometry['toast']['hidden'] and not geometry['overlap']
+        and geometry['toast']['left']>=0 and geometry['toast']['right']<=480
+        and geometry['toast']['top']>=0 and geometry['toast']['bottom']<=320,geometry)
+    await capture(page,'narrow-landscape-message-clear')
+    await page.set_viewport_size({'width':390,'height':844})
     touch=await Touch.create(page)
     await touch.steer()
     await touch.button('#jump')
@@ -322,7 +395,7 @@ async def mobile_cases(page):
         pressed['pulses']==before['pulses']+1 and not pressed['taut']
         and mechanisms(await snap(page))==mechanisms(pressed))
     await capture(page,'mobile-multitouch-recovered')
-    for width,height in [(320,568),(568,320),(844,390),(390,844)]:
+    for width,height in [(320,568),(480,320),(568,320),(844,390),(390,844)]:
         await page.set_viewport_size({'width':width,'height':height})
         await page.locator('#pause').tap()
         await wait(page,'s.paused')

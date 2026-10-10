@@ -24,6 +24,8 @@ O menu de pausa oferece **Gráficos → Automáticos / Mais detalhes / Mais dese
 
 O cenário usa objetos repetidos em lotes, iluminação com sombras seletivas e geometrias de fita preparadas antecipadamente. A personagem balança braços e pernas na corrida, muda a postura no salto, comprime o corpo ao pousar e acena após um tempo em repouso. Árvores, flores, nuvens e coletáveis também se movimentam. Os shaders são preparados durante a abertura para reduzir engasgos na primeira interação.
 
+A direção de arte combina um jardim de tecido com terra em camadas: bordas costuradas, pedras arredondadas, copas com variações de cor e uma trama procedural discreta nas roupas e fitas. As plataformas finas dos caminhos extras têm acabamento coral para diferenciá-las do chão sólido. Olhos, cabelo e mochila de Iri foram desenhados para continuar legíveis na câmera lateral. Todos esses detalhes são gerados no próprio jogo, sem baixar imagens ou modelos externos.
+
 ## Percurso
 
 1. Avance para a direita pelo gramado e salte entre os dois degraus suspensos até chegar ao pomar. Carretéis amarelos indicam o percurso; as bobinas azuis ficam em plataformas elevadas. As plataformas finas dos caminhos extras permitem saltar por baixo e pousar por cima.

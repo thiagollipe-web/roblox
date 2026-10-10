@@ -137,6 +137,39 @@ test('loose ribbon supports both directions; tension preserves support and airbo
   assert.equal(game.state.pair, 0, 'cannot replace a ribbon while airborne');
 });
 
+test('small analog movements cross the raised ribbon ends without getting stuck', async t => {
+  const game = await ready(); t.after(() => game.dispose()); reachOrchard(game);
+  game.act(); walkTo(game, 24);
+  step(game, 600, { ...forward, z: .05 });
+  assert.ok(game.state.position.z > 26.5, 'slow movement enters the loose bridge from the orchard');
+  assert.equal(game.state.onRibbon, true); assert.equal(game.state.deaths, 0);
+  game.act(); walkTo(game, 24);
+  step(game, 600, { ...forward, z: .05 });
+  assert.ok(game.state.position.z > 26.5, 'the same approach works with the ribbon taut');
+  assert.equal(game.state.onRibbon, true);
+
+  game.respawn(); walkTo(game, 24.95);
+  assert.equal(game.state.pair, null);
+  assert.ok(game.state.position.y < 1.34, 'removing a ribbon also removes the approach under its anchor');
+  game.act(); step(game, 300, { ...forward, z: .05 });
+  assert.ok(game.state.position.z > 26, 'regenerating the ribbon restores its smooth approach');
+
+  game.reset(); step(game, 10); reachNest(game); game.act(); game.act(); walkTo(game, 43);
+  step(game, 600, { ...forward, z: .05 });
+  assert.ok(game.state.position.z > 44.6, 'slow movement clears the island edge onto the enemy bridge');
+  assert.equal(game.state.onRibbon, true); assert.equal(game.state.deaths, 0);
+
+  game.reset(); step(game, 10); reachFlower(game); walkTo(game, 56); game.act();
+  step(game, 600, { ...forward, z: .05 });
+  assert.ok(game.state.position.z > 58.5, 'slow movement enters the final ribbon from its launch island');
+  assert.equal(game.state.onRibbon, true); assert.equal(game.state.deaths, 0);
+
+  game.reset(); step(game, 10); reachFlower(game); launch(game);
+  step(game, 600, { ...backward, z: -.05 });
+  assert.ok(game.state.position.z < 64, 'slow reverse movement clears the ribbon end on the summit');
+  assert.equal(game.state.deaths, 0); assert.equal(game.state.grounded, true);
+});
+
 test('enemy cuts loose ribbons, physically blocks the exit, and opens only after the timed pulse', async t => {
   const game = await ready(); t.after(() => game.dispose()); reachNest(game);
   game.act(); assert.equal(game.state.enemy, 'warning');
