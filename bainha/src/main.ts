@@ -30,13 +30,13 @@ async function boot() {
   let lastHudKey = '', renderDirty = true;
   const fixedStep = 1 / 60;
   const keys = new Set<string>();
-  let stickX = 0, stickZ = 0;
+  let stickX = 0;
   let pointer: {
     id: number; x: number; y: number; time: number;
     kind: 'pending' | 'move' | 'aim'; cancel: boolean; dy: number; jumpLatched: boolean;
   } | null = null;
   let padJump = false, padTrigger = false, padPause = false, padAimArmed = false;
-  let lastTouchX = 0, lastTouchZ = 0, coastUntil = 0;
+  let lastTouchX = 0, coastUntil = 0;
 
   function activeModal() {
     if (contextLost) return $('error');
@@ -53,13 +53,13 @@ async function boot() {
   function cancelAim() {
     aiming = false; keys.delete('KeyE'); padAimArmed = false;
     if (pointer?.kind === 'aim') {
-      pointer = null; stickX = stickZ = 0; coastUntil = 0;
+      pointer = null; stickX = 0; coastUntil = 0;
       $('joystick-knob').style.transform = '';
     }
     show('cancel-indicator', false);
   }
   function clearInput() {
-    keys.clear(); stickX = stickZ = 0; aiming = false; pointer = null;
+    keys.clear(); stickX = 0; aiming = false; pointer = null;
     jumpQueued = false; coastUntil = 0; padAimArmed = false;
     // Held buttons are not fresh presses when returning from a menu.
     const pad = navigator.getGamepads?.().find(p => p?.connected);
@@ -138,7 +138,10 @@ async function boot() {
     if (event.target instanceof HTMLElement && event.target.closest('button')
       && (event.code === 'Space' || event.code === 'Enter')) return;
     if (['KeyW','KeyA','KeyS','KeyD','Space','KeyE','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.code)) event.preventDefault();
-    if (event.code === 'Space' && !event.repeat) jump();
+    if (['Space', 'KeyW', 'ArrowUp'].includes(event.code)) {
+      if (!event.repeat) jump();
+      return;
+    }
     if (event.code === 'KeyE') {
       if (!event.repeat) { aiming = true; keys.add(event.code); }
       return;
@@ -169,8 +172,10 @@ async function boot() {
       }
       if (dy > -50) pointer.jumpLatched = false;
       pointer.dy = dy;
-      const scale = Math.max(42, Math.hypot(dx, dy)); stickX = dx / scale; stickZ = -dy / scale;
-      $('joystick-knob').style.transform = `translate(${stickX * 31}px, ${-stickZ * 31}px)`;
+      // A vertical jump flick must not reduce horizontal travel speed.
+      stickX = Math.max(-1, Math.min(1, dx / 42));
+      const visualScale = Math.max(42, Math.hypot(dx, dy));
+      $('joystick-knob').style.transform = `translate(${dx / visualScale * 31}px, ${dy / visualScale * 31}px)`;
     } else if (pointer.kind === 'aim') {
       pointer.cancel = dy > 55;
       $('cancel-indicator').textContent = pointer.cancel ? 'Solte para cancelar' : 'Solte para costurar · deslize para baixo para cancelar';
@@ -181,9 +186,9 @@ async function boot() {
     if (!cancelled) {
       if (pointer.kind === 'pending') jump();
       if (pointer.kind === 'aim' && !pointer.cancel) act();
-      if (pointer.kind === 'move') { lastTouchX = stickX; lastTouchZ = stickZ; coastUntil = performance.now() + 110; }
+      if (pointer.kind === 'move') { lastTouchX = stickX; coastUntil = performance.now() + 110; }
     } else coastUntil = 0;
-    pointer = null; stickX = stickZ = 0; aiming = false;
+    pointer = null; stickX = 0; aiming = false;
     $('joystick-knob').style.transform = ''; show('cancel-indicator', false);
   }
   zone.addEventListener('pointerup', event => endPointer(event, false));
@@ -227,12 +232,10 @@ async function boot() {
       pointer.kind = 'aim'; aiming = true; show('cancel-indicator', true);
       $('cancel-indicator').textContent = 'Solte para costurar · deslize para baixo para cancelar';
     }
-    let x = stickX, z = stickZ;
-    if (keys.has('KeyW') || keys.has('ArrowUp')) z += 1;
-    if (keys.has('KeyS') || keys.has('ArrowDown')) z -= 1;
+    let x = stickX;
     if (keys.has('KeyA') || keys.has('ArrowLeft')) x -= 1;
     if (keys.has('KeyD') || keys.has('ArrowRight')) x += 1;
-    if (!pointer && now < coastUntil) { x += lastTouchX; z += lastTouchZ; }
+    if (!pointer && now < coastUntil) x += lastTouchX;
     const pad = navigator.getGamepads?.().find(p => p?.connected);
     if (pad && started && !game.state.won && !contextLost) {
       const pressedPause = !!pad.buttons[9]?.pressed;
@@ -241,7 +244,7 @@ async function boot() {
       padPause = pressedPause;
       if (!paused) {
         const deadzone = (n: number) => Math.abs(n) > .18 ? n : 0;
-        x += deadzone(pad.axes[0] || 0); z -= deadzone(pad.axes[1] || 0);
+        x += deadzone(pad.axes[0] || 0);
         if (pressedJump && !padJump) jump();
         if (pressedTrigger && !padTrigger) { aiming = true; padAimArmed = true; }
         if (!pressedTrigger && padTrigger && padAimArmed) { padAimArmed = false; aiming = false; act(); }
@@ -251,15 +254,15 @@ async function boot() {
       if (padAimArmed) cancelAim();
       padJump = false; padTrigger = false; padPause = false; padAimArmed = false;
     }
-    const length = Math.hypot(x, z); if (length > 1) { x /= length; z /= length; }
+    x = Math.max(-1, Math.min(1, x));
     if (started && !paused && !game.state.won && !contextLost) {
       elapsed += dt; accumulator += dt * (aiming ? .25 : 1);
       while (accumulator >= fixedStep) {
         motion.capture(game.state.position);
         const deaths = game.state.deaths;
-        // Inputs use screen directions. With the camera looking toward +Z,
-        // screen-right is world -X. Convert once for keys, touch and gamepad.
-        game.update(fixedStep, { x: aiming ? 0 : -x, z: aiming ? 0 : z, jump: jumpQueued });
+        // Side camera sits on -X: screen-right is world +Z. Every input source
+        // uses this single mapping; physics keeps the character on the X=0 rail.
+        game.update(fixedStep, { x: 0, z: aiming ? 0 : x, jump: jumpQueued });
         if (game.state.deaths !== deaths) motion.reset(game.state.position);
         jumpQueued = false; accumulator -= fixedStep;
       }
@@ -291,8 +294,8 @@ async function boot() {
       const relevantAction = !['APROXIME-SE', 'POUSE PRIMEIRO'].includes(actionLabel);
       show('hint', started && !paused && !s.won && (aiming || elapsed < 8 || relevantAction));
       if (aiming) setText($('hint'), `${actionLabel} · solte para confirmar`);
-      else if (touchMode) setText($('hint'), elapsed < 8 ? 'Arraste · empurre mais para cima para saltar' : `Segure e solte: ${actionLabel.toLowerCase()}`);
-      else setText($('hint'), elapsed < 8 ? 'WASD mover · Espaço saltar · E usar a fita' : `E · ${actionLabel.toLowerCase()}`);
+      else if (touchMode) setText($('hint'), elapsed < 8 ? 'Arraste para os lados · ↑ para saltar' : `Segure e solte: ${actionLabel.toLowerCase()}`);
+      else setText($('hint'), elapsed < 8 ? '← → ou A D mover · Espaço saltar · E usar a fita' : `E · ${actionLabel.toLowerCase()}`);
     }
     if (s.message && s.message !== lastMessage) {
       lastMessage = s.message; toastTime = 3.2; setText($('toast'), s.message);

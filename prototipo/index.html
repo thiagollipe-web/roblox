@@ -4,15 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
     <meta name="theme-color" content="#2ac8e4" />
-    <meta name="description" content="Corra, salte e costure novos caminhos em BAINHA: Colina das Costuras, uma aventura 3D em WebGL." />
+    <meta name="description" content="Avance, salte e costure novos caminhos em BAINHA: Colina das Costuras, uma aventura de plataforma com câmera lateral e cenários 3D em WebGL." />
     <title>BAINHA — Colina das Costuras</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%2321bfd1'/%3E%3Cpath d='M21 48V16h10c14 0 14 15 0 16H21m10 0c15 0 15 16 0 16H21' fill='none' stroke='white' stroke-width='6' stroke-linecap='round'/%3E%3C/svg%3E" />
-    <script type="module" crossorigin src="./assets/index-CsD-h2Gi.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-B1v3UUob.css">
+    <script type="module" crossorigin src="./assets/index-BlXcAMTF.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-Bo_ZBA-l.css">
   </head>
   <body>
     <div id="app">
-      <div id="scene" tabindex="-1" aria-label="Colina das Costuras, mundo tridimensional interativo"></div>
+      <div id="scene" tabindex="-1" aria-label="Colina das Costuras, aventura de plataforma com câmera lateral e cenário tridimensional"></div>
 
       <div id="loading" role="status" aria-live="polite">
         <span class="loading-mark" aria-hidden="true"></span>
@@ -22,7 +22,7 @@
       <main id="menu" class="screen intro-screen" aria-labelledby="game-title" hidden>
         <div class="intro-topline">
           <span class="world-badge"><span aria-hidden="true">✦</span> UMA AVENTURA NAS ALTURAS</span>
-          <span class="edition">3D · WEBGL</span>
+          <span class="edition">2,5D · WEBGL</span>
         </div>
         <div class="intro-copy">
           <p class="eyebrow">PRONTA PARA DAR O PRÓXIMO SALTO?</p>
@@ -33,8 +33,9 @@
             <span>Vamos jogar!</span>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 8 7-8 7Z" /></svg>
           </button>
-          <p class="intro-input-hint desktop-copy"><kbd>W A S D</kbd> mover <span>·</span> <kbd>ESPAÇO</kbd> saltar <span>·</span> <kbd>E</kbd> fio</p>
-          <p class="intro-input-hint touch-copy">Arraste para correr. Deslize para cima para saltar!</p>
+          <p class="intro-input-hint desktop-copy"><kbd>← →</kbd> ou <kbd>A D</kbd> mover <span>·</span> <kbd>ESPAÇO</kbd> saltar <span>·</span> <kbd>E</kbd> fio</p>
+          <p class="intro-input-hint touch-copy">Arraste no controle esquerdo. Salte com o botão ↑.</p>
+          <p class="orientation-hint">Vire o celular para ver mais do caminho.</p>
         </div>
         <div class="intro-footer">
           <div class="chapter"><span class="chapter-number">01</span><div><span class="chapter-label">SEU PRIMEIRO DESTINO</span><span class="chapter-name">Colina das Costuras</span></div></div>
@@ -66,10 +67,10 @@
       <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
       <div id="controls" hidden>
-        <div id="touch-zone" aria-label="Arraste para mover. Deslize para cima durante o movimento para saltar. Toque parado para saltar ou segure parado para usar o fio.">
+        <div id="touch-zone" aria-label="Arraste para a esquerda ou direita para correr. Deslize para cima durante o movimento para saltar. Toque parado para saltar ou segure parado para usar o fio.">
           <span class="joystick-ring" aria-hidden="true"></span>
           <span id="joystick-knob" aria-hidden="true"></span>
-          <span class="joystick-caption">MOVER</span>
+          <span class="joystick-caption">← MOVER →</span>
         </div>
         <div class="touch-actions">
           <button id="action" class="touch-button action-button" type="button" aria-label="Costurar ou tensionar o fio"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 21c3-13 9 9 14-8 2-7 5-7 8-5M23 5l4 3-4 3" /></svg><span>Costurar</span></button>
@@ -79,23 +80,23 @@
       <div id="cancel-indicator" hidden>↓ Deslize para cancelar</div>
 
       <section id="pause-menu" class="screen modal-screen" role="dialog" aria-modal="true" aria-labelledby="pause-title" hidden>
-        <div class="modal-card">
+        <div class="modal-card pause-card">
           <p class="eyebrow">COLINA DAS COSTURAS</p>
           <h2 id="pause-title">Uma pausa!</h2>
           <p class="modal-description">A próxima descoberta está logo ali.</p>
           <div class="control-guide desktop-copy">
-            <div><span>Mover</span><span><kbd>W A S D</kbd> ou <kbd>↑ ↓ ← →</kbd></span></div>
-            <div><span>Saltar</span><kbd>ESPAÇO</kbd></div>
+            <div><span>Mover</span><span><kbd>A D</kbd> ou <kbd>← →</kbd></span></div>
+            <div><span>Saltar</span><span><kbd>ESPAÇO</kbd>, <kbd>W</kbd> ou <kbd>↑</kbd></span></div>
             <div><span>Costurar / tensionar / liberar</span><kbd>E</kbd></div>
             <div><span>Pausar</span><kbd>ESC</kbd></div>
-            <p>Controle: analógico esquerdo para mover · A para saltar · RT para o fio.</p>
+            <p>Controle: analógico esquerdo na horizontal · A para saltar · RT para o fio.</p>
           </div>
           <div class="control-guide touch-copy">
-            <div><span>Mover</span><span>Arraste com o polegar</span></div>
-            <div><span>Saltar correndo</span><span>Deslize para cima</span></div>
-            <div><span>Saltar parado</span><span>Toque rápido ou botão ↑</span></div>
+            <div><span>Mover</span><span>Arraste para os lados</span></div>
+            <div><span>Saltar</span><span>Botão ↑ à direita</span></div>
+            <div><span>Saltar com um polegar</span><span>Deslize para cima ao correr</span></div>
             <div><span>Usar o fio</span><span>Segure parado ou botão do fio</span></div>
-            <p>A câmera acompanha você. Seu polegar cuida da aventura!</p>
+            <p>Avance da esquerda para a direita. A câmera acompanha cada salto!</p>
           </div>
           <label class="graphics-setting" for="graphics-quality">
             <span>Gráficos</span>

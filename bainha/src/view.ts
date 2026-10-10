@@ -16,7 +16,7 @@ export function createView(container: HTMLElement) {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.04;
-  renderer.domElement.setAttribute('aria-label', 'BAINHA: aventura WebGL 3D nos Jardins Suspensos');
+  renderer.domElement.setAttribute('aria-label', 'BAINHA: aventura lateral em 2,5D nos Jardins Suspensos');
   container.appendChild(renderer.domElement);
   const scene = new THREE.Scene();
   // A tiny local texture supplies a soft horizon without another scene pass.
@@ -31,9 +31,11 @@ export function createView(container: HTMLElement) {
   const sky = new THREE.DataTexture(skyData, 1, 128, THREE.RGBAFormat);
   sky.colorSpace = THREE.SRGBColorSpace; sky.minFilter = sky.magFilter = THREE.LinearFilter; sky.needsUpdate = true;
   scene.background = sky;
-  scene.fog = new THREE.Fog('#b9efff', 45, 125);
-  const camera = new THREE.PerspectiveCamera(49, 1, .1, 180);
-  camera.position.set(8.5, 9, -12); camera.lookAt(0, .9, 5.4);
+  scene.fog = new THREE.Fog('#b9efff', 48, 112);
+  // +Z is level progress and screen-right. The fixed side angle keeps jumps
+  // readable while a small downward pitch reveals the depth of the 3D scenery.
+  const camera = new THREE.OrthographicCamera(-11, 11, 6, -6, .1, 180);
+  camera.position.set(-28, 7.6, 3.2); camera.lookAt(0, 2, 3.2);
   const light = new THREE.DirectionalLight('#fff4d6', 3.3);
   light.castShadow = true;
   light.shadow.mapSize.set(touch ? 1024 : 2048, touch ? 1024 : 2048);
@@ -127,36 +129,46 @@ export function createView(container: HTMLElement) {
     return terrainZones.get(key)!;
   }
   const trees: { base: THREE.Matrix4; near: boolean }[] = [];
+  let backgroundTravel = 0;
   function tree(x: number, y: number, z: number, scale: number, near = true) {
     object.position.set(x, y, z); object.rotation.set(0, 0, 0); object.scale.setScalar(scale); object.updateMatrix();
     trees.push({ base: object.matrix.clone(), near });
   }
 
-  // Flower beds are instanced to keep the portrait phone renderer affordable.
+  // Flower beds are instanced, with all tall decoration behind the play rail.
   const flowers: {x:number;y:number;z:number;s:number}[] = [];
   for (const p of PLATFORMS) {
     const c = p.center, s = p.size, top = c.y + s.y / 2;
     const zone = terrainZone(c.z);
-    const thickness = Math.max(s.y, 1.1);
+    const bonus = p.bonus === true;
+    const thickness = bonus ? s.y : Math.max(s.y, 1.1);
+    if (bonus) {
+      // These thin ledges are one-way surfaces: no chunky island beneath them
+      // that would imply a solid wall to a character jumping up from below.
+      box(c.x, top - thickness / 2, c.z, s.x, thickness, s.z, cream, zone, .055);
+      box(c.x, top + .015, c.z, s.x + .05, .06, s.z + .05, grass, zone, .025);
+      box(c.x - s.x / 2 - .02, top - .11, c.z, .04, .09, s.z - .2, gold, zone);
+      continue;
+    }
     box(c.x, top - thickness / 2 - .12, c.z, s.x, thickness, s.z, earth, zone, .17);
     box(c.x, top - thickness + .15, c.z, s.x + .02, .3, s.z + .02, earthBand, zone, .1);
     box(c.x, top - .15, c.z, s.x + .16, .3, s.z + .16, grassEdge, zone, .11);
     box(c.x, top - .025, c.z, s.x + .12, .16, s.z + .12, grass, zone, .07);
     // Raised platforms are edged in a sunlit band, making their height easy to read.
-    if (s.z < 5.1) box(c.x, top - .43, c.z - s.z / 2 - .012, s.x - .35, .15, .025, path, zone);
-    if (s.x >= 9 && s.z >= 8) {
+    if (s.z < 5.1) box(c.x - s.x / 2 - .012, top - .43, c.z, .025, .15, s.z - .35, path, zone);
+    if (s.x >= 4 && s.z >= 6) {
       const tiles = Math.floor(s.z / 1.7);
       for (let j = 0; j < tiles; j++) {
         const stone = box(c.x + Math.sin(j * 1.4) * .25, top + .07, c.z - s.z / 2 + 1 + j * 1.7, 1.6, .045, 1.28, path, zone, .02);
         stone.rotation.y = .07 * Math.sin(j * 3);
       }
-      tree(c.x - s.x / 2 + 1.05, top, c.z + s.z * .12, 1.0);
-      tree(c.x + s.x / 2 - 1.05, top, c.z - s.z * .25, .78);
+      tree(c.x + s.x / 2 - .25, top, c.z + s.z * .2, .86);
+      tree(c.x + s.x / 2 + .1, top, c.z - s.z * .3, .68);
       for (let side of [-1, 1]) for (let i = 0; i < 7; i++) {
         flowers.push({ x:c.x + side * (s.x / 2 - .55 - .27 * (i % 3)), y:top + .17, z:c.z - s.z / 2 + .7 + i * (s.z - 1.4) / 7, s:.12 + .04 * (i % 2) });
       }
       // Rounded embedded stones add scale and readable earth strata without textures.
-      for (let j = 0; j < 5; j++) sphere(c.x - s.x / 2 + 1 + j * (s.x - 2) / 4, top - .67, c.z - s.z / 2 - .02, .23, .15, .055, path, zone);
+      for (let j = 0; j < 5; j++) sphere(c.x - s.x / 2 - .02, top - .67, c.z - s.z / 2 + .7 + j * (s.z - 1.4) / 4, .055, .15, .23, path, zone);
     }
   }
   for (const zone of terrainZones.values()) { shadows(zone); batchRigid(zone); }
@@ -187,7 +199,7 @@ export function createView(container: HTMLElement) {
   // One smooth, vertex-colored silhouette replaces each pair of intersecting hill caps.
   const hillGeometry = new THREE.SphereGeometry(1, 24, 14);
   const hillPositions = hillGeometry.getAttribute('position'), hillColors = new Float32Array(hillPositions.count * 3);
-  const hillBottom = new THREE.Color('#38aeaa'), hillTop = new THREE.Color('#9dde67'), hillColor = new THREE.Color();
+  const hillBottom = new THREE.Color('#79c9cb'), hillTop = new THREE.Color('#b1dc8c'), hillColor = new THREE.Color();
   for (let i = 0; i < hillPositions.count; i++) {
     const height = THREE.MathUtils.smoothstep(hillPositions.getY(i), .12, .92);
     hillColor.copy(hillBottom).lerp(hillTop, height);
@@ -197,11 +209,14 @@ export function createView(container: HTMLElement) {
   const hills = new THREE.InstancedMesh(hillGeometry, new THREE.MeshLambertMaterial({ vertexColors: true, color: '#ffffff' }), 18);
   scene.add(hills);
   for (let i = 0; i < 18; i++) {
-    const side = i % 2 ? 1 : -1, x = side * (20 + (i * 7) % 18), z = i * 6 - 8;
-    const h = 4 + (i % 4) * 2.3, y = -8 + i % 3;
-    object.position.set(x, y, z); object.rotation.set(0, 0, 0); object.scale.set(7 + i % 3, h * 1.08, 6); object.updateMatrix();
+    // Orthographic scenery does not shrink with distance. Keep the far hills
+    // low and compensate their height for the camera's downward pitch so the
+    // blue sky remains an open backdrop to jumps and the upper bonus route.
+    const x = 20 + (i % 2) * 17 + (i % 3) * 2, z = i * 7 - 14;
+    const h = 3.2 + (i % 4) * .6, y = -3 - x * .2;
+    object.position.set(x, y, z); object.rotation.set(0, 0, 0); object.scale.set(6 + i % 3, h, 5.5 + i % 2); object.updateMatrix();
     hills.setMatrixAt(i, object.matrix);
-    if (i % 4 === 0) tree(x, y + h, z, 1.2, false);
+    if (i % 4 === 0) tree(x, y + h, z, .35, false);
   }
   // All crowns move through instance matrices: wind adds no per-tree draw calls.
   const treeParts = [
@@ -236,6 +251,7 @@ export function createView(container: HTMLElement) {
     for (const batch of treeBatches) {
       batch.parts.forEach((part, index) => {
         instanceMatrix.multiplyMatrices(part.crown ? crownMatrices[part.tree] : trees[part.tree].base, part.local);
+        if (!trees[part.tree].near) instanceMatrix.elements[14] += backgroundTravel * .14;
         batch.instances.setMatrixAt(index, instanceMatrix);
       });
       batch.instances.instanceMatrix.needsUpdate = true;
@@ -244,24 +260,24 @@ export function createView(container: HTMLElement) {
   updateTrees(0);
   const cloudParts: { x: number; y: number; z: number; sx: number; sy: number; sz: number; phase: number }[] = [];
   for (let i = 0; i < 16; i++) {
-    const x = ((i * 23) % 85) - 42, z = i * 9 - 12;
-    const y = 10 + (i % 5) * 2.3;
-    const size = 1.5 + (i % 3) * .5;
+    const x = 14 + (i % 4) * 8, z = i * 9 - 18;
+    const y = 5.8 + (i % 4) * 1.1 - x * .2;
+    const size = .72 + (i % 3) * .22;
     cloudParts.push({ x: x - size, y, z, sx: size * 1.4, sy: size * .65, sz: size * .7, phase: i * 1.3 },
       { x, y: y + size * .22, z, sx: size * 1.1, sy: size * .9, sz: size * .8, phase: i * 1.3 },
-      { x: x + size, y: y - .08, z, sx: size, sy: size * .6, sz: size * .65, phase: i * 1.3 });
+      { x: x + size, y: y - .08, z: z + size * .85, sx: size, sy: size * .6, sz: size * .85, phase: i * 1.3 });
   }
   const clouds = new THREE.InstancedMesh(sphereGeometry, cloudMaterial, cloudParts.length);
   clouds.instanceMatrix.setUsage(THREE.DynamicDrawUsage); clouds.frustumCulled = false; scene.add(clouds);
   function updateClouds(t: number) {
     cloudParts.forEach((c, i) => {
-      object.position.set(c.x + Math.sin(t * .13 + c.phase) * 4.5, c.y + Math.sin(t * .6 + c.phase) * .16, c.z); object.rotation.set(0, 0, 0);
+      object.position.set(c.x + Math.sin(t * .13 + c.phase) * .65, c.y + Math.sin(t * .6 + c.phase) * .16, c.z + Math.sin(t * .13 + c.phase) * 2.2); object.rotation.set(0, 0, 0);
       object.scale.set(c.sx, c.sy, c.sz); object.updateMatrix(); clouds.setMatrixAt(i, object.matrix);
     });
     clouds.instanceMatrix.needsUpdate = true;
   }
   updateClouds(0);
-  const sun = sphere(-28, 28, 95, 4, 4, 4, new THREE.MeshBasicMaterial({color:'#fff4ac',fog:false})); sun.castShadow = false;
+  const sun = sphere(62, -5.8, 21, 2.1, 2.1, 2.1, new THREE.MeshBasicMaterial({color:'#fff4ac',fog:false})); sun.castShadow = false;
 
   // Iri: a tiny courier with a spool backpack, rounded overalls and a flying coral scarf.
   const player = new THREE.Group(), avatar = new THREE.Group(); scene.add(player); player.add(avatar);
@@ -273,7 +289,7 @@ export function createView(container: HTMLElement) {
   sphere(0, 1.45, -.06, .4, .22, .35, cream, avatar);
   sphere(-.24, 1.35, .04, .16, .25, .25, cream, avatar);
   sphere(.13, 1.49, .2, .24, .15, .19, cream, avatar);
-  // Eyes face +z and remain readable in the opening three-quarter view.
+  // Eyes face +Z; the menu pose turns toward the side camera.
   const eyes = new THREE.Group(); eyes.position.y = 1.25; avatar.add(eyes);
   for (const side of [-1, 1]) {
     sphere(side * .13, 0, .31, .075, .105, .035, white, eyes);
@@ -370,7 +386,7 @@ export function createView(container: HTMLElement) {
   cylinder(0, 0, 0, .9, .12, blue, launch);
   const launchRing = hoop(0, .1, 0, .68, gold, launch); launchRing.rotation.x = Math.PI / 2;
   const launchArrow = new THREE.Shape(); launchArrow.moveTo(0,.55); launchArrow.lineTo(-.35,0); launchArrow.lineTo(-.13,0); launchArrow.lineTo(-.13,-.5); launchArrow.lineTo(.13,-.5); launchArrow.lineTo(.13,0); launchArrow.lineTo(.35,0); launchArrow.closePath();
-  const arrow = mesh(new THREE.ShapeGeometry(launchArrow), glow, 0, .17, 0, launch); arrow.rotation.x = -Math.PI / 2;
+  const arrow = mesh(new THREE.ShapeGeometry(launchArrow), glow, 0, .17, 0, launch); arrow.rotation.set(-Math.PI / 2, 0, Math.PI);
 
   const enemy = new THREE.Group(); enemy.position.set(LANDMARKS.enemy.x, LANDMARKS.enemy.y, LANDMARKS.enemy.z); scene.add(enemy);
   sphere(0, .53, 0, .66, .47, .58, blue, enemy);
@@ -403,6 +419,11 @@ export function createView(container: HTMLElement) {
     for (let i=0;i<=Math.ceil(width/.75);i++) box(-width/2+i*width/Math.ceil(width/.75),height/2,0,.12,height,.12,color,root,.04);
     box(0,height-.23,0,width,.16,.18,cream,root,.05);
     box(0,.35,0,width,.16,.18,color,root,.05);
+    // The fence still occupies its real cross-track collision plane. A round
+    // lock on the visible end gives the edge-on obstacle a clear side silhouette.
+    const lock = hoop(-width / 2 - .24, height * .6, 0, .39, gold, root); lock.rotation.y = Math.PI / 2;
+    const plate = cylinder(-width / 2 - .22, height * .6, 0, .28, .12, color, root); plate.rotation.z = Math.PI / 2;
+    box(-width / 2 - .31, height * .6, 0, .08, .22, .075, cream, root, .025);
     shadows(root); batchRigid(root);
     return root;
   }
@@ -410,7 +431,7 @@ export function createView(container: HTMLElement) {
   const bossGate = gate(LANDMARKS.bossGate,GATE_WIDTHS.boss,4,blue);
 
   // The guardian is an original walking flower, with petals that open on its pulse window.
-  const guardian = new THREE.Group(); guardian.position.set(LANDMARKS.boss.x,LANDMARKS.boss.y,LANDMARKS.boss.z + 1.6); scene.add(guardian);
+  const guardian = new THREE.Group(); guardian.position.set(LANDMARKS.boss.x + 4.4,LANDMARKS.boss.y,LANDMARKS.boss.z + 1.6); guardian.rotation.y = Math.PI / 2; scene.add(guardian);
   cylinder(0,2.1,0,.46,4.2,leaf,guardian);
   for(const side of [-1,1]) {
     const foliage = sphere(side*1.1,1.8,0,1.4,.36,.7,leafLight,guardian); foliage.rotation.z=side*.32;
@@ -482,17 +503,28 @@ export function createView(container: HTMLElement) {
   pulseHalo.rotation.y = Math.PI / 2;
   let pulsePoints: Vec3[] = [];
   let visualClock = 0;
-  let angle=Math.PI,walkClock=0,wasGrounded=true,landing=0,lastPulses=0,pulseAge=99,firstFrame=true;
+  let angle=-Math.PI / 2,walkClock=0,wasGrounded=true,landing=0,lastPulses=0,pulseAge=99,firstFrame=true;
   let walkBlend = 0, airBlend = 0, turnBank = 0, jumpStretch = 0;
   let restingTime = 0, animationMode: 'idle' | 'run' | 'jump' | 'aim' | 'win' = 'idle';
   const limbTargets = new Float32Array(4);
   let lastDeaths = 0, lastElapsed = 0, lastStarted = false, lastCheckpoint = 0;
   const cameraLook = new THREE.Vector3(), cameraDesired=new THREE.Vector3(),lookDesired=new THREE.Vector3();
+  let cameraBaseY = 0, cameraLead = 3.2;
   const diagnosticProjection = new THREE.Matrix4();
   let quality: QualityMode = 'auto', effectiveQuality: 'high' | 'low' = 'high';
   let renderedFrames = 0, qualityChanges = 0, frameTimeMs = 16.67, warmupTime = 0, slowTime = 0;
   let portrait=false;
-  function resize(){const w=container.clientWidth||innerWidth,h=container.clientHeight||innerHeight;portrait=w/h<.85;renderer.setSize(w,h);camera.aspect=w/h;camera.fov=portrait?58:49;camera.updateProjectionMatrix();}
+  function resize() {
+    const w = container.clientWidth || innerWidth, h = container.clientHeight || innerHeight, aspect = w / h;
+    portrait = aspect < .85;
+    // Never crop an upcoming jump in a narrow window; landscape remains the
+    // primary composition, with the character at a comfortable readable size.
+    const height = Math.max(11.8, 14 / aspect), width = height * aspect;
+    renderer.setSize(w, h);
+    camera.left = -width / 2; camera.right = width / 2;
+    camera.top = height / 2; camera.bottom = -height / 2;
+    camera.updateProjectionMatrix();
+  }
   resize();
   const sceneMaterials = new Set<THREE.Material>();
   scene.traverse(child => {
@@ -538,7 +570,8 @@ export function createView(container: HTMLElement) {
     return Object.freeze({ drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles,
       pixelRatio: renderer.getPixelRatio(), quality, effectiveQuality, shadowMode: effectiveQuality === 'high' ? 'dynamic' : 'blob',
       renderedFrames, frameTimeMs: Math.round(frameTimeMs * 100) / 100, qualityChanges, geometryCount: renderer.info.memory.geometries,
-      camera: { viewProjection: diagnosticProjection.toArray(), position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+      camera: { mode: 'side-2.5d', viewProjection: diagnosticProjection.toArray(), position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+        visibleWidth: camera.right - camera.left, visibleHeight: camera.top - camera.bottom,
         hero: { x: player.position.x, y: player.position.y, z: player.position.z } },
       animation: { time: visualClock, mode: animationMode, yaw: player.rotation.y,
         rig: { leftLegX: limbs[0].rotation.x, rightLegX: limbs[2].rotation.x, leftArmX: limbs[1].rotation.x, rightArmX: limbs[3].rotation.x,
@@ -572,10 +605,14 @@ export function createView(container: HTMLElement) {
   }
   function render(s:GameState,options:RenderOptions) {
     const {dt,started,aiming}=options,p=options.position ?? s.position;
+    backgroundTravel = p.z;
+    hills.position.z = backgroundTravel * .14;
+    clouds.position.z = backgroundTravel * .27;
+    sun.position.z = 21 + backgroundTravel * .38;
     const reset = (!lastStarted && started) || options.elapsed < lastElapsed || s.deaths !== lastDeaths || (s.checkpoint === 0 && lastCheckpoint > 0);
     if (reset) {
       firstFrame = true; visualClock = 0; walkClock = 0; walkBlend = 0; airBlend = s.grounded ? 0 : 1;
-      turnBank = 0; jumpStretch = 0; landing = 0; restingTime = 0; wasGrounded = s.grounded; angle = started ? 0 : Math.PI + .28;
+      turnBank = 0; jumpStretch = 0; landing = 0; restingTime = 0; wasGrounded = s.grounded; angle = started ? 0 : -Math.PI / 2;
       lastPulses = s.pulses; pulseAge = 99;
       pickups.forEach(item => { item.collected = s.collected.includes(item.c.id); item.pop = 0; });
     }
@@ -591,7 +628,7 @@ export function createView(container: HTMLElement) {
     walkClock+=dt*speed*2.2;
     let turn = 0;
     if(moving){const target=Math.atan2(s.velocity.x,s.velocity.z);turn=Math.atan2(Math.sin(target-angle),Math.cos(target-angle));angle+=turn*blend;}
-    else if(!started)angle=Math.PI+.28;
+    else if(!started)angle=-Math.PI / 2;
     player.position.set(p.x,p.y,p.z);player.rotation.y=angle;
     if(!wasGrounded&&s.grounded)landing=1;
     wasGrounded=s.grounded;landing=Math.max(0,landing-dt*4.2);
@@ -663,11 +700,20 @@ export function createView(container: HTMLElement) {
     ribbonMaterial.emissiveIntensity = (s.taut ? .28 : .07) + Math.max(0, 1 - pulseAge / .45) * .75;
     confetti.visible=s.won;
     if(s.won){for(let i=0;i<80;i++){const time=(t*.6+i*.077)%1;object.position.set(p.x+Math.sin(i*17.13)*4,p.y+7-time*7,p.z+Math.cos(i*3.72)*4);object.rotation.set(t+i,t*.7+i, t*2+i);object.scale.set(.12,.055,.2);object.updateMatrix();confetti.setMatrixAt(i,object.matrix);}confetti.instanceMatrix.needsUpdate=true;}
-    // Follow the feet, with a little forward look. Height changes never hide a landing.
-    const followY=Math.max(0,p.y);
-    if(started){cameraDesired.set(p.x*.72,followY+(portrait?10.0:7.8),p.z-(portrait?14.3:11.5));lookDesired.set(p.x*.8,followY+1.1,p.z+(portrait?4.8:4.8));}
-    else {cameraDesired.set(8.5,9.0,-12);lookDesired.set(0,.9,5.4);}
-    const smoothing=firstFrame?1:1-Math.exp(-dt*6);camera.position.lerp(cameraDesired,smoothing);cameraLook.lerp(lookDesired,smoothing);camera.lookAt(cameraLook);firstFrame=false;
+    // Track the horizontal route smoothly. Ordinary jumps stay in a vertical
+    // deadzone; taller launch arcs move the frame only when they need more room.
+    // A falling character cannot drag the camera down and hide their respawn ledge.
+    const followY = Math.max(0, p.y);
+    if (firstFrame) { cameraBaseY = followY; cameraLead = 3.2; }
+    const leadTarget = started ? THREE.MathUtils.clamp(1.6 + s.velocity.z * .35, -1.5, 3.8) : 3.2;
+    cameraLead += (leadTarget - cameraLead) * (1 - Math.exp(-dt * 3.5));
+    const baseTarget = s.grounded ? followY : THREE.MathUtils.clamp(cameraBaseY, followY - 3.0, followY + 1.4);
+    cameraBaseY += (Math.max(0, baseTarget) - cameraBaseY) * (1 - Math.exp(-dt * (s.grounded ? 4 : 2.5)));
+    const focusZ = started ? p.z + cameraLead : 3.2;
+    const focusY = (started ? cameraBaseY : 0) + (portrait ? 2.5 : 2);
+    lookDesired.set(0, focusY, focusZ);
+    cameraDesired.set(-28, focusY + 5.6, focusZ);
+    const smoothing=firstFrame?1:1-Math.exp(-dt*7);camera.position.lerp(cameraDesired,smoothing);cameraLook.lerp(lookDesired,smoothing);camera.lookAt(cameraLook);firstFrame=false;
     // Snap shadow tracking to a small world grid so subpixel motion does not crawl.
     const texel = 40 / light.shadow.mapSize.x;
     const shadowX = Math.round(p.x / texel) * texel, shadowZ = Math.round(p.z / texel) * texel;

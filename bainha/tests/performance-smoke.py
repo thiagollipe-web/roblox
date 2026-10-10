@@ -122,21 +122,21 @@ async def profile(browser, name, url, output, quality):
             await cdp.send('Input.dispatchTouchEvent',{'type':kind,'touchPoints':points})
         start=asyncio.create_task(touch('touchStart'))
         await asyncio.sleep(.016)
-        # The chase camera faces +Z, so screen-left moves toward world +X.
-        # Keep the benchmark's world-space route unchanged after the input fix.
-        move=asyncio.create_task(touch('touchMove',-42))
+        # The side camera looks from -X: screen-right moves toward world +Z.
+        # Keep this back-and-forth route within the start platform (Z -5 to +5).
+        move=asyncio.create_task(touch('touchMove',42))
         await asyncio.gather(start,move)
         assert not (await snapshot(page))['aiming'],'Touch driver accidentally long-pressed'
         for i,target in enumerate([2,-2,2,-2,0]):
-            if i: await touch('touchMove',-42 if target>=0 else 42)
-            await wait_state(page,f's.position.x {">=" if target>=0 else "<="} {target}')
+            if i: await touch('touchMove',42 if target>=0 else -42)
+            await wait_state(page,f's.position.z {">=" if target>=0 else "<="} {target}')
             endpoints.append(await snapshot(page))
         await touch('touchEnd')
     else:
         for target in [2,-2,2,-2,0]:
-            key='a' if target>=0 else 'd'
+            key='d' if target>=0 else 'a'
             await page.keyboard.down(key)
-            await wait_state(page,f's.position.x {">=" if target>=0 else "<="} {target}')
+            await wait_state(page,f's.position.z {">=" if target>=0 else "<="} {target}')
             await page.keyboard.up(key)
             endpoints.append(await snapshot(page))
     await page.evaluate('window.__PERFORMANCE_QA__.phase("capture")')
@@ -170,7 +170,7 @@ async def main(args):
             'limitations':['SwiftShader software rendering is not representative of user hardware FPS.',
                 'rAF callback CPU covers the entire app loop including simulation, DOM, animations, draw submission and GL wrapper overhead.',
                 'Draw/triangle counts include shadow passes and may include offscreen work. No GPU duration or renderer-only CPU measured.',
-                'Workload samples start-platform idle and lateral movement; it does not prove late-level performance or diagnose a specific user device.'],
+                'Workload samples start-platform idle and side-view movement along world Z; it does not prove late-level performance or diagnose a specific user device.'],
             'profiles':{}}
     async with async_playwright() as p:
         browser=await p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=FLAGS)

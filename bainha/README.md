@@ -1,6 +1,6 @@
-# BAINHA — Colina das Costuras · WebGL
+# BAINHA — Colina das Costuras · 2,5D WebGL
 
-Um platformer 3D colorido para navegador, com saltos entre plataformas, caminhos elevados, carretéis para coletar e uma fita luminosa que cria pontes e lança a personagem. Three.js renderiza o mundo em **WebGL 2** e Rapier calcula as colisões. A direção de jogo segue a clareza e o ritmo de plataformas 3D de câmera automática; Iri, o cenário e os mecanismos são originais. Esta entrega contém uma fase fixa jogável.
+Um jogo de plataforma lateral **2,5D** para navegador: personagem e cenário em 3D, movimento da esquerda para a direita e câmera acompanhando de lado. Há saltos entre plataformas, caminhos elevados, carretéis para coletar e uma fita luminosa que cria pontes e lança a personagem. Three.js renderiza o mundo em **WebGL 2** e Rapier calcula as colisões. Iri, o cenário e os mecanismos são originais. Esta entrega contém uma fase fixa jogável, com enquadramento pensado para tela horizontal.
 
 ## Jogar
 
@@ -14,9 +14,9 @@ npm run build:html
 
 Abra `../prototipo/BAINHA.html` com Chrome ou Edge. O HTML incorpora código, estilos, física WASM e avisos de licença; não precisa de internet. Requer WebGL2 e WebAssembly disponíveis no navegador. No celular, prefira o link publicado, pois alguns gerenciadores de arquivos abrem HTML em uma prévia sem JavaScript.
 
-- PC: **WASD/setas** para mover na direção indicada na tela, **Espaço** para saltar, **E** para costurar/tensionar/liberar, **Esc** para cancelar a seleção ou pausar.
-- Celular: na área circular inferior, **arraste** para mover; durante o movimento, **empurre mais para cima** para saltar sem tirar o polegar. Retorne à região central do controle antes de repetir o gesto. Um toque rápido também salta; **segure parado e solte** para usar a fita. Durante a pressão, arrastar para baixo cancela. Os botões de salto e costura oferecem outra forma de jogar.
-- Gamepad: analógico esquerdo, botão inferior para salto e gatilho direito para costura. Mapeamento implementado; hardware físico ainda não verificado.
+- PC: **A/D ou ←/→** para andar, **Espaço, W ou ↑** para saltar, **E** para costurar/tensionar/liberar, **Esc** para cancelar a seleção ou pausar.
+- Celular: prefira a tela deitada. Na área circular inferior, **arraste para os lados** para mover; durante o movimento, **empurre mais para cima** para saltar sem tirar o polegar. Retorne à região central do controle antes de repetir o gesto. Um toque rápido também salta; **segure parado e solte** para usar a fita. Durante a pressão, arrastar para baixo cancela. Os botões de salto e costura à direita também funcionam com o segundo dedo. A tela vertical continua utilizável.
+- Gamepad: analógico esquerdo para os lados, botão inferior para salto e gatilho direito para costura. O eixo vertical não move a personagem em profundidade. Mapeamento implementado; hardware físico ainda não verificado.
 
 ## Arte e fluidez
 
@@ -26,7 +26,7 @@ O cenário usa objetos repetidos em lotes, iluminação com sombras seletivas e 
 
 ## Percurso
 
-1. Corra pelo gramado e salte entre os dois degraus suspensos até chegar ao pomar. Carretéis amarelos indicam o percurso; as bobinas azuis ficam em desvios elevados.
+1. Avance para a direita pelo gramado e salte entre os dois degraus suspensos até chegar ao pomar. Carretéis amarelos indicam o percurso; as bobinas azuis ficam em plataformas elevadas. As plataformas finas dos caminhos extras permitem saltar por baixo e pousar por cima.
 2. No anel dourado ao fim do pomar, teça uma ponte de fita e atravesse até a próxima ilha.
 3. Aproxime-se do Tesourisco, teça outra fita e tensione. Quando ele errar o bote, libere a tensão para capturá-lo e abrir a passagem.
 4. Salte até a plataforma da flor. Teça e tensione a raiz. Quando a flor acender, libere para voar até o jardim mais alto. Chegue à grande flor para concluir.
@@ -42,7 +42,7 @@ Quedas devolvem ao último apoio e preservam mecanismos já resolvidos. O menu d
 - `index.html` / `src/style.css`: interface responsiva em português, com área central livre para ver os pousos.
 - `scripts/standalone.mjs`: incorpora o build, estilos, física WASM e licenças em um HTML único, sem recursos externos.
 
-Teclado, toque e gamepad usam direções de tela e passam pela mesma conversão antes da física. Como a câmera olha para o sentido positivo de Z, direita na tela corresponde ao sentido negativo de X no mundo; o desenho do joystick mantém as coordenadas de tela.
+Teclado, toque e gamepad passam pela mesma conversão: direita na tela corresponde ao sentido positivo de Z no mundo. A câmera fica no lado negativo de X; a física limita a personagem ao plano X=0, preservando os saltos em Y. Cenário e personagens continuam tridimensionais. As plataformas bônus possuem colisão apenas no pouso por cima, mantendo livre o caminho principal.
 
 ## Desenvolvimento
 
@@ -75,7 +75,7 @@ Os testes de navegador usam Python Playwright e `/usr/bin/chromium`, quando disp
 python3 tests/browser-smoke.py
 ```
 
-O padrão verifica desktop e retrato. Use `BAINHA_DEVICE=desktop` ou `BAINHA_DEVICE=portrait` para repetir somente um perfil, e `BAINHA_ARTIFACTS` para escolher a pasta de evidências. Capturas e resultados não devem ser publicados junto ao jogo.
+O padrão verifica desktop e celular em tela horizontal. Use `BAINHA_DEVICE=desktop` ou `BAINHA_DEVICE=mobile` para repetir somente um perfil; `BAINHA_DEVICE=portrait` exercita a adaptação vertical. Use `BAINHA_ARTIFACTS` para escolher a pasta de evidências. Capturas e resultados não devem ser publicados junto ao jogo.
 
 Para verificar especificamente as direções de tela e a animação ao longo do tempo:
 
@@ -83,7 +83,7 @@ Para verificar especificamente as direções de tela e a animação ao longo do 
 python3 tests/controls-animation-smoke.py
 ```
 
-Esse teste projeta o deslocamento pela câmera real, verifica setas/WASD e arrastos laterais e captura poses de repouso, corrida e salto. A cobertura de gamepad usa uma entrada emulada, sem substituir o teste em um controle físico.
+Esse teste projeta o deslocamento pela câmera real, verifica controles laterais e arrastos, testa os atalhos de salto e captura poses de repouso, corrida e salto. A cobertura de gamepad usa uma entrada emulada, sem substituir o teste em um controle físico.
 
 Para verificar cancelamento de comandos, repetição de teclas, botões com dois dedos, foco dos menus e recuperação após perda do contexto gráfico:
 
@@ -122,7 +122,7 @@ As medições com Chromium/SwiftShader neste ambiente são comparações de soft
 - Uma fase fixa de demonstração, sem geração procedural ou campanha completa.
 - Uma fita ativa, colisão por cápsula Rapier, saltos com tolerância de borda e antecipação de comando, coletáveis, checkpoints, inimigo, portões, lançamento e conclusão.
 - Personagem animada, nuvens, árvores e cenário compostos de geometrias originais; arte estilizada de protótipo.
-- Câmera automática e controles de retrato. Emulação não comprova ergonomia, desempenho térmico ou compatibilidade em todos os aparelhos.
+- Câmera lateral automática, movimento em um plano e interface para tela horizontal, com adaptação em retrato. Emulação não comprova ergonomia, desempenho térmico ou compatibilidade em todos os aparelhos.
 - Sem contas, telemetria, serviços de terceiros ou armazenamento de progresso entre visitas.
 - Não há instaladores nativos nem código Unity nesta demonstração. O jogo nesta pasta usa o navegador como plataforma de execução.
 

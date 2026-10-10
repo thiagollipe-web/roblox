@@ -1,30 +1,32 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 
 export type Vec3 = { x: number; y: number; z: number };
-export type Platform = { id: string; center: Vec3; size: Vec3; bonus?: boolean };
+export type Platform = { id: string; center: Vec3; size: Vec3; bonus?: boolean; oneWay?: boolean };
 export type Pair = { id: number; a: Vec3; b: Vec3; label: string };
 export type Input = { x: number; z: number; jump: boolean };
 export type Collectible = { id: string; position: Vec3; special: boolean };
 
-const platform = (id: string, x: number, z: number, top: number, width: number, depth: number, bonus = false): Platform => ({
-  id, center: { x, y: top - .8, z }, size: { x: width, y: 1.6, z: depth }, bonus,
-});
+const platform = (id: string, z: number, top: number, width: number, depth: number, bonus = false): Platform => {
+  const thickness = bonus ? .22 : 1.6;
+  return { id, center: { x: 0, y: top - thickness / 2, z }, size: { x: width, y: thickness, z: depth }, bonus, oneWay: bonus };
+};
 
 /** The small gaps at the beginning require real jumps; ribbons connect the longer gaps. */
 export const PLATFORMS: Platform[] = [
-  platform('inicio', 0, 0, 0, 12, 10),
-  platform('salto-1', -1.3, 7.8, .65, 5, 3),
-  platform('salto-2', 1.1, 12, 1.3, 5, 3),
-  platform('pomar', 0, 20, 1.3, 14, 11),
-  platform('tesourisco', 0, 39, 1.3, 14, 11),
-  platform('jardineira', 0, 53, 2.3, 10, 5),
-  platform('flor', 0, 57, 3.2, 6, 3),
-  platform('copa', 0, 68, 5.3, 12, 10),
-  platform('bonus-pomar-1', -8.5, 19, 2.05, 3.2, 3.2, true),
-  platform('bonus-pomar-2', -11.8, 22, 2.8, 3.2, 3.2, true),
-  platform('bonus-ninho-1', 8.8, 38, 2.1, 3.2, 3.2, true),
-  platform('bonus-ninho-2', 12, 41, 2.9, 3.2, 3.2, true),
-  platform('bonus-copa', -8.2, 67, 6.2, 3.5, 3.5, true),
+  platform('inicio', 0, 0, 4.6, 10),
+  platform('salto-1', 7.8, .65, 3.5, 3),
+  platform('salto-2', 12, 1.3, 3.5, 3),
+  platform('pomar', 20, 1.3, 4.6, 11),
+  platform('tesourisco', 39, 1.3, 4.6, 11),
+  platform('jardineira', 53, 2.3, 4, 5),
+  platform('flor', 57, 3.2, 3.2, 3),
+  platform('copa', 68, 5.3, 4.6, 10),
+  // Thin upper routes can be jumped through from below; the lower route stays open.
+  platform('bonus-pomar-1', 19, 2.55, 3.3, 2.2, true),
+  platform('bonus-pomar-2', 22, 3.8, 3, 2.2, true),
+  platform('bonus-ninho-1', 36.5, 2.55, 3.3, 2.2, true),
+  platform('bonus-ninho-2', 39.5, 3.8, 3, 2.2, true),
+  platform('bonus-copa', 67, 6.65, 3.3, 1.8, true),
 ];
 
 export const PAIRS: Pair[] = [
@@ -42,22 +44,22 @@ export const LANDMARKS = {
   goal: { x: 0, y: 5.3, z: 69 },
   boss: { x: 0, y: 5.3, z: 73 },
 };
-export const GATE_WIDTHS = { enemy: 10.4, boss: 12.4 };
+export const GATE_WIDTHS = { enemy: 4.4, boss: 5 };
 export const MOVEMENT = { speed: 6.2, jump: 8.5, gravity: 20 };
 
 const coinPositions: number[][] = [
-  [0, .85, 1.6], [-.4, .85, 3.6], [-1.3, 1.5, 7.8], [1.1, 2.15, 12],
-  [0, 2.15, 16], [0, 2.15, 19], [0, 2.15, 22], [-4.7, 2.15, 18], [-8.5, 2.9, 19],
+  [0, .85, 1.6], [0, .85, 3.6], [0, 1.5, 7.8], [0, 2.15, 12],
+  [0, 2.15, 16], [0, 2.15, 19], [0, 2.15, 23], [0, 3.4, 19], [0, 4.65, 22],
   [0, 2.05, 27], [0, 1.9, 30], [0, 2.05, 33],
-  [0, 2.15, 36], [0, 2.15, 39], [0, 2.15, 42], [4.7, 2.15, 38], [8.8, 2.95, 38],
+  [0, 2.15, 35], [0, 2.15, 39], [0, 2.15, 42], [0, 3.4, 36.5], [0, 4.65, 39.5],
   [0, 2.35, 46], [0, 2.8, 49], [0, 3.15, 53], [0, 4.05, 57],
-  [0, 6.15, 65], [0, 6.15, 67], [-4.4, 6.15, 67],
+  [0, 6.15, 65], [0, 6.15, 66.5], [0, 7.5, 67],
 ];
 export const COLLECTIBLES: Collectible[] = [
   ...coinPositions.map(([x, y, z], i) => ({ id: `fio-${i + 1}`, position: { x, y, z }, special: false })),
-  { id: 'bobina-pomar', position: { x: -11.8, y: 3.65, z: 22 }, special: true },
-  { id: 'bobina-ninho', position: { x: 12, y: 3.75, z: 41 }, special: true },
-  { id: 'bobina-copa', position: { x: -8.2, y: 7.05, z: 67 }, special: true },
+  { id: 'bobina-pomar', position: { x: 0, y: 4.65, z: 22.6 }, special: true },
+  { id: 'bobina-ninho', position: { x: 0, y: 4.65, z: 40.1 }, special: true },
+  { id: 'bobina-copa', position: { x: 0, y: 7.5, z: 67.4 }, special: true },
 ];
 
 /** Decorative ribbon vertices share the same centerline as the independent collision strips. */
@@ -123,8 +125,10 @@ export async function createGame(): Promise<Game> {
   controller.setMinSlopeSlideAngle(Math.PI / 3);
   const body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, FOOT_OFFSET + .04, 0));
   const capsule = world.createCollider(RAPIER.ColliderDesc.capsule(HALF_HEIGHT, RADIUS).setFriction(0), body);
-  for (const { center: c, size: s } of PLATFORMS) {
-    world.createCollider(RAPIER.ColliderDesc.cuboid(s.x / 2, s.y / 2, s.z / 2).setTranslation(c.x, c.y, c.z));
+  const oneWayTops = new Map<number, number>();
+  for (const { center: c, size: s, oneWay } of PLATFORMS) {
+    const collider = world.createCollider(RAPIER.ColliderDesc.cuboid(s.x / 2, s.y / 2, s.z / 2).setTranslation(c.x, c.y, c.z));
+    if (oneWay) oneWayTops.set(collider.handle, c.y + s.y / 2);
   }
   let ribbonColliders: RAPIER.Collider[] = [];
   let enemyGate: RAPIER.Collider | null = null, bossGate: RAPIER.Collider | null = null;
@@ -139,9 +143,9 @@ export async function createGame(): Promise<Game> {
     message: 'Corra, salte pelas duas ilhotas e siga os fios dourados até o pomar!',
   };
 
-  function setFeet(x: number, y: number, z: number) {
-    state.position.x = x; state.position.y = y; state.position.z = z;
-    nextTranslation.x = x; nextTranslation.y = y + FOOT_OFFSET; nextTranslation.z = z;
+  function setFeet(_x: number, y: number, z: number) {
+    state.position.x = 0; state.position.y = y; state.position.z = z;
+    nextTranslation.x = 0; nextTranslation.y = y + FOOT_OFFSET; nextTranslation.z = z;
     body.setTranslation(nextTranslation, true);
     body.setNextKinematicTranslation(nextTranslation);
   }
@@ -243,7 +247,7 @@ export async function createGame(): Promise<Game> {
       if (state.bossReady && atPad) {
         state.canalOpen = true; makeGates(); launchTime = 1.08;
         state.grounded = false; state.onRibbon = false;
-        state.velocity.x = clamp(-state.position.x / .99, -3, 3);
+        state.velocity.x = 0;
         state.velocity.z = clamp((65.5 - state.position.z) / .99, 7.3, 10);
         state.velocity.y = 12;
         state.message = 'Uhuu! Voe até o terraço e encontre a grande flor azul!';
@@ -310,23 +314,26 @@ export async function createGame(): Promise<Game> {
     if (launchTime > 0) {
       launchTime -= dt;
     } else {
-      const magnitude = Math.hypot(input.x, input.z), scale = magnitude > 1 ? 1 / magnitude : 1;
-      const dx = input.x * scale * MOVEMENT.speed - state.velocity.x;
-      const dz = input.z * scale * MOVEMENT.speed - state.velocity.z;
-      const delta = Math.hypot(dx, dz), acceleration = state.grounded ? 48 : 26;
+      // Gameplay stays on the Y/Z plane even if a caller supplies depth input.
+      const dz = clamp(input.z, -1, 1) * MOVEMENT.speed - state.velocity.z;
+      const delta = Math.abs(dz), acceleration = state.grounded ? 48 : 26;
       const factor = delta > 0 ? Math.min(1, acceleration * dt / delta) : 0;
-      state.velocity.x += dx * factor; state.velocity.z += dz * factor;
+      state.velocity.z += dz * factor;
     }
+    state.velocity.x = 0;
     if (jumpBuffer > 0 && coyote > 0 && launchTime <= 0) {
       state.velocity.y = MOVEMENT.jump; state.grounded = false; jumpBuffer = 0; coyote = 0;
     } else if (state.grounded && state.velocity.y <= 0) {
       state.velocity.y = -.15;
     }
     state.velocity.y = Math.max(-25, state.velocity.y - MOVEMENT.gravity * dt);
-    displacement.x = state.velocity.x * dt; displacement.y = state.velocity.y * dt; displacement.z = state.velocity.z * dt;
-    controller.computeColliderMovement(capsule, displacement);
+    displacement.x = 0; displacement.y = state.velocity.y * dt; displacement.z = state.velocity.z * dt;
+    controller.computeColliderMovement(capsule, displacement, undefined, undefined, collider => {
+      const top = oneWayTops.get(collider.handle);
+      return top === undefined || (state.velocity.y <= 0 && state.position.y >= top - .05);
+    });
     const movement = controller.computedMovement(), translation = body.translation();
-    nextTranslation.x = translation.x + movement.x; nextTranslation.y = translation.y + movement.y; nextTranslation.z = translation.z + movement.z;
+    nextTranslation.x = 0; nextTranslation.y = translation.y + movement.y; nextTranslation.z = translation.z + movement.z;
     body.setNextKinematicTranslation(nextTranslation); world.timestep = dt; world.step();
     const actual = body.translation();
     state.position.x = actual.x; state.position.y = actual.y - FOOT_OFFSET; state.position.z = actual.z;
@@ -342,7 +349,7 @@ export async function createGame(): Promise<Game> {
     const reached = island?.id === 'pomar' ? 1 : island?.id === 'tesourisco' ? 2 : island?.id === 'jardineira' || island?.id === 'flor' ? 3 : 0;
     if (reached > state.checkpoint) {
       state.checkpoint = reached;
-      state.message = reached === 1 ? 'Pomar salvo! Explore as ilhas laterais ou siga até os anéis da ponte.'
+      state.message = reached === 1 ? 'Pomar salvo! Salte pelas plataformas altas ou siga até os anéis da ponte.'
         : reached === 2 ? 'Novo apoio! Um Tesourisco vigia os próximos anéis.'
           : 'Último apoio salvo! Salte até a flor dourada para preparar seu voo.';
     }

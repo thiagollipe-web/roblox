@@ -1,7 +1,7 @@
 """Regression checks for audited input, dialog, loading and recovery defects.
 
 Uses real keyboard/CDP touch, an explicitly emulated Gamepad input provider,
-and the native WEBGL_lose_context extension. Application state is read only.
+and the native WEBGL_lose_context extension. Application state is read only. Movement follows the 2.5D Z rail.
 Requires an HTTP server so native context restoration can reload the game.
 """
 import asyncio
@@ -79,13 +79,13 @@ async def restart(page):
 
 async def jump_to(page,takeoff,landing):
     deaths=(await snap(page))['deaths']
-    await page.keyboard.down('w')
+    await page.keyboard.down('d')
     try:
         await wait(page,f's.position.z>={takeoff}')
         await page.keyboard.press('Space')
         await wait(page,f's.position.z>={landing} || s.deaths>{deaths}')
     finally:
-        await page.keyboard.up('w')
+        await page.keyboard.up('d')
     await settle(page)
     assert (await snap(page))['deaths']==deaths,'Anchor approach jump failed'
 
@@ -93,11 +93,11 @@ async def reach_anchor(page):
     await jump_to(page,4,7.2)
     await jump_to(page,8.6,11.6)
     await jump_to(page,12.9,16.5)
-    await page.keyboard.down('w')
+    await page.keyboard.down('d')
     try:
         await wait(page,'s.position.z>=22')
     finally:
-        await page.keyboard.up('w')
+        await page.keyboard.up('d')
     await settle(page)
     await wait(page,'s.checkpoint===1')
 
@@ -147,10 +147,10 @@ async def keyboard_and_pad(page):
     await page.keyboard.up('Escape')
     await page.keyboard.press('Escape')
     await wait(page,'!s.paused')
-    await page.keyboard.down('w')
+    await page.keyboard.down('d')
     await wait(page,'s.position.z>.4')
     await page.keyboard.press('Escape')
-    await page.keyboard.up('w')
+    await page.keyboard.up('d')
     frozen=await snap(page)
     await page.wait_for_timeout(250)
     await check('pause freezes motion with a previously held movement key',(await snap(page))['position']==frozen['position'])
@@ -161,6 +161,7 @@ async def keyboard_and_pad(page):
     await check('released movement key stays cleared after resume',math.hypot((await snap(page))['position']['x']-stopped['position']['x'],(await snap(page))['position']['z']-stopped['position']['z'])<.02)
     await restart(page)
     await reach_anchor(page)
+    await capture(page,'desktop-under-one-way-ledge')
 
     before=mechanisms(await snap(page))
     await page.keyboard.down('e')
@@ -206,6 +207,7 @@ async def keyboard_and_pad(page):
     await pad_buttons(page,{0:True})
     await wait(page,'!s.grounded && s.velocity.y>0')
     await pad_buttons(page,{0:False})
+    await capture(page,'desktop-jump-under-one-way-ledge')
     await settle(page)
     await check('fresh gamepad A still jumps after pause',True)
     before=mechanisms(await snap(page))
@@ -257,7 +259,7 @@ class Touch:
         await asyncio.sleep(.016)
         move=asyncio.create_task(self.send('touchMove',[self.primary]))
         await asyncio.gather(start,move)
-        await wait(self.page,'!s.aiming && Math.abs(s.velocity.x)>1')
+        await wait(self.page,'!s.aiming && Math.abs(s.velocity.z)>1')
     async def button(self,selector,drag_off=False):
         box=await self.page.locator(selector).bounding_box()
         second={'id':2,'x':box['x']+box['width']/2,'y':box['y']+box['height']/2,'radiusX':4,'radiusY':4,'force':1}
@@ -320,7 +322,7 @@ async def mobile_cases(page):
         pressed['pulses']==before['pulses']+1 and not pressed['taut']
         and mechanisms(await snap(page))==mechanisms(pressed))
     await capture(page,'mobile-multitouch-recovered')
-    for width,height in [(320,568),(568,320),(390,844)]:
+    for width,height in [(320,568),(568,320),(844,390),(390,844)]:
         await page.set_viewport_size({'width':width,'height':height})
         await page.locator('#pause').tap()
         await wait(page,'s.paused')
@@ -333,7 +335,7 @@ async def main():
     try:
         async with async_playwright() as p:
             browser=await p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'])
-            desktop=await browser.new_context(viewport={'width':1280,'height':800})
+            desktop=await browser.new_context(viewport={'width':1280,'height':720})
             page=await desktop.new_page()
             await observe(page)
             module_gate=asyncio.Event()

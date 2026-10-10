@@ -1,6 +1,8 @@
 """Browser gameplay smoke: real keyboard / CDP touch input, read-only snapshots.
 
 Requires Python Playwright and Chromium. Does not mutate application state.
+Default route: desktop 1280x720 and mobile landscape 844x390.
+BAINHA_DEVICE=portrait explicitly exercises the 390x844 fallback.
 """
 import json
 import os
@@ -12,11 +14,13 @@ BASE = os.environ.get('BAINHA_URL', 'http://127.0.0.1:8001/prototipo/')
 OFFLINE = os.environ.get('BAINHA_OFFLINE') == '1'
 HTML_FILE = os.environ.get('BAINHA_HTML_FILE')
 DEVICE = os.environ.get('BAINHA_DEVICE', 'all')
-if DEVICE not in ('all', 'desktop', 'portrait'):
-    raise ValueError('BAINHA_DEVICE must be all, desktop, or portrait')
+MOBILE_LABEL = 'portrait' if DEVICE == 'portrait' else 'landscape'
+MOBILE_VIEWPORT = {'width':390,'height':844} if DEVICE == 'portrait' else {'width':844,'height':390}
+if DEVICE not in ('all', 'desktop', 'mobile', 'portrait'):
+    raise ValueError('BAINHA_DEVICE must be all, desktop, mobile, or portrait')
 OUT = Path(os.environ.get('BAINHA_ARTIFACTS', '/workspace/onboarding/bainha-redesign'))
 OUT.mkdir(parents=True, exist_ok=True)
-report = {'url': BASE if not HTML_FILE else 'about:blank', 'html_file': HTML_FILE, 'load_method': 'HTML content fixture' if HTML_FILE else 'navigation', 'offline': OFFLINE, 'device': DEVICE, 'input_method': 'Playwright keyboard and Chromium CDP touch events; snapshots read only', 'checks': [], 'errors': [], 'failed_http': [], 'external_requests': [], 'screenshots': []}
+report = {'url': BASE if not HTML_FILE else 'about:blank', 'html_file': HTML_FILE, 'load_method': 'HTML content fixture' if HTML_FILE else 'navigation', 'offline': OFFLINE, 'device': DEVICE, 'mobile_viewport': MOBILE_VIEWPORT, 'mapping': '2.5D: D/right drag advances +Z; X remains zero', 'input_method': 'Playwright keyboard and Chromium CDP touch events; snapshots read only', 'checks': [], 'errors': [], 'failed_http': [], 'external_requests': [], 'screenshots': []}
 if HTML_FILE:
     report['html_sha256'] = hashlib.sha256(Path(HTML_FILE).read_bytes()).hexdigest()
 
@@ -35,6 +39,9 @@ async def wait(page, condition, timeout=60000):
         raise
 
 async def check(name, page, condition=True):
+    name = name.replace('portrait', MOBILE_LABEL)
+    state = await snap(page)
+    await assert_condition(page, abs(state['position']['x']) < .001 and abs(state['velocity']['x']) < .001, 'Player left the 2.5D rail')
     await assert_condition(page, condition, name)
     report['checks'].append({'name': name, 'state': await snap(page)})
     print(name, flush=True)
@@ -47,7 +54,7 @@ async def assert_condition(page, condition, name):
         raise AssertionError(name)
 
 async def capture(page, name):
-    path = OUT / (name + '.png')
+    path = OUT / (name.replace('portrait', MOBILE_LABEL) + '.png')
     await page.screenshot(path=str(path))
     report['screenshots'].append(str(path))
 
@@ -66,25 +73,59 @@ async def observe(page):
         await page.goto(BASE, wait_until='networkidle')
     await page.wait_for_function('window.__BAINHA__ && !document.querySelector("#menu").hidden')
 
+async def begin_camera_trace(page):
+    # Observe rendered transforms without changing simulation or renderer state.
+    await page.evaluate('''() => {
+      window.__routeCameraQA={active:true,frames:[]};
+      let last=-1;
+      function sample(){
+        const trace=window.__routeCameraQA;
+        if(!trace.active)return;
+        const s=window.__BAINHA__.snapshot(), r=s.render;
+        if(s.started&&!s.paused&&last!==r.renderedFrames){
+          last=r.renderedFrames;
+          const p=r.camera.hero,m=r.camera.viewProjection,y=p.y+.75;
+          const cx=m[0]*p.x+m[4]*y+m[8]*p.z+m[12];
+          const cy=m[1]*p.x+m[5]*y+m[9]*p.z+m[13];
+          const cw=m[3]*p.x+m[7]*y+m[11]*p.z+m[15];
+          trace.frames.push({elapsed:s.elapsed,hero:[(cx/cw+1)*innerWidth/2,(1-cy/cw)*innerHeight/2],cameraY:r.camera.position.y,feetY:p.y,grounded:s.grounded});
+        }
+        requestAnimationFrame(sample);
+      }
+      requestAnimationFrame(sample);
+    }''')
+
+async def check_camera_trace(page):
+    trace=await page.evaluate('()=>{window.__routeCameraQA.active=false;return window.__routeCameraQA.frames;}')
+    width,height=page.viewport_size['width'],page.viewport_size['height']
+    bounds={'left':min(t['hero'][0] for t in trace),'right':max(t['hero'][0] for t in trace),
+        'top':min(t['hero'][1] for t in trace),'bottom':max(t['hero'][1] for t in trace)}
+    largest_step=max(abs(b['cameraY']-a['cameraY']) for a,b in zip(trace,trace[1:]))
+    report['mobile_camera_trace']={'frames':len(trace),'hero_center_bounds_px':bounds,'largest_vertical_camera_step':largest_step,'maximum_launch_height':max(t['feetY'] for t in trace)}
+    (OUT/'mobile-camera-trace.json').write_text(json.dumps(trace,indent=2))
+    await check('mobile route keeps jumps and launch visible with continuous camera tracking',page,
+        bounds['left']>20 and bounds['right']<width-20 and bounds['top']>20
+        and bounds['bottom']<height-20 and largest_step<.65)
+
 async def move_keyboard(page, z):
-    await page.keyboard.down('w')
+    await page.keyboard.down('d')
     try:
         await wait(page, f's.position.z >= {z} || s.won')
     finally:
-        await page.keyboard.up('w')
+        await page.keyboard.up('d')
     await page.wait_for_timeout(250)
 
 async def jump_keyboard(page, takeoff, landing, minimum_height):
     """Cross a gap using normal movement and a real Space press."""
     deaths = (await snap(page))['deaths']
-    await page.keyboard.down('w')
+    await page.keyboard.down('d')
     try:
         await wait(page, f's.position.z >= {takeoff}')
         await page.keyboard.press('Space')
         await wait(page, f's.position.y > {minimum_height} || s.deaths > {deaths}')
         await wait(page, f's.position.z >= {landing} || s.deaths > {deaths}')
     finally:
-        await page.keyboard.up('w')
+        await page.keyboard.up('d')
     await wait(page, 's.grounded')
     await page.wait_for_timeout(160)
     await assert_condition(page, (await snap(page))['deaths'] == deaths, f'Keyboard jump failed at z={takeoff}')
@@ -154,7 +195,7 @@ class Touch:
         """
         start = asyncio.create_task(self.send('touchStart'))
         await asyncio.sleep(.016)
-        move = asyncio.create_task(self.send('touchMove', y=self.y - direction * distance))
+        move = asyncio.create_task(self.send('touchMove', x=self.x + direction * distance, y=self.y - 20))
         await asyncio.gather(start, move)
         events = await self.page.evaluate('window.__touchQA.slice(-2)')
         await assert_condition(self.page, [e['type'] for e in events] == ['pointerdown', 'pointermove'], str(events))
@@ -185,7 +226,7 @@ class Touch:
         state = await snap(self.page)
         await check('portrait steers onto the launch flower center', self.page,
             state['grounded'] and state['position']['y'] > 3.1
-            and abs(state['position']['x']) <= 1.6
+            and abs(state['position']['x']) < .001
             and abs(state['position']['z'] - 57) <= 1)
 
     async def move(self, z):
@@ -205,15 +246,15 @@ class Touch:
             if precision:
                 # Same-type touchMove events are coalesced if queued together.
                 # Observe the apex concurrently, await actual flick delivery,
-                # then return the finger inside the ring for a slower landing.
+                # then reset its vertical offset while retaining half-tilt steering.
                 height = asyncio.create_task(wait(self.page,
                     f's.position.y > {minimum_height} || s.deaths > {deaths}', 10000))
-                await self.send('touchMove', y=self.y - 108)
+                await self.send('touchMove', x=self.x + (22 if precision else 42), y=self.y - 108)
                 await wait(self.page, 's.velocity.y > 0 || s.position.y > 3.2', 10000)
-                await self.send('touchMove', y=self.y - 22)
+                await self.send('touchMove', x=self.x + 22, y=self.y - 20)
                 await height
             else:
-                await self.send('touchMove', y=self.y - 108)
+                await self.send('touchMove', x=self.x + (22 if precision else 42), y=self.y - 108)
                 await wait(self.page, f's.position.y > {minimum_height} || s.deaths > {deaths}')
             await wait(self.page, f's.position.z >= {landing} || s.deaths > {deaths}')
         finally:
@@ -226,8 +267,8 @@ async def main():
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(executable_path='/usr/bin/chromium', headless=True, args=['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'])
-            if DEVICE != 'portrait':
-                desktop = await browser.new_context(viewport={'width': 1440, 'height': 900}, device_scale_factor=1)
+            if DEVICE in ('all', 'desktop'):
+                desktop = await browser.new_context(viewport={'width': 1280, 'height': 720}, device_scale_factor=1)
                 page = await desktop.new_page()
                 await observe(page)
                 await capture(page, 'desktop-menu')
@@ -298,9 +339,9 @@ async def main():
                 await page.keyboard.press('Escape')
                 await wait(page, 's.paused')
                 before = (await snap(page))['position']
-                await page.keyboard.down('w')
+                await page.keyboard.down('d')
                 await page.wait_for_timeout(500)
-                await page.keyboard.up('w')
+                await page.keyboard.up('d')
                 await check('desktop pause blocks movement', page, (await snap(page))['position'] == before)
                 await check_paused_render(page)
                 for mode in ('low', 'high'):
@@ -329,7 +370,7 @@ async def main():
                 await check('desktop resume', page)
                 await desktop.close()
             if DEVICE != 'desktop':
-                mobile = await browser.new_context(viewport={'width': 390, 'height': 844}, device_scale_factor=1, is_mobile=True, has_touch=True)
+                mobile = await browser.new_context(viewport=MOBILE_VIEWPORT, device_scale_factor=1, is_mobile=True, has_touch=True)
                 page = await mobile.new_page()
                 await observe(page)
                 await capture(page, 'portrait-menu')
@@ -341,6 +382,7 @@ async def main():
                 # observation window before latency-sensitive CDP gestures.
                 await wait(page, 's.elapsed >= 5')
                 await capture(page, 'portrait-start')
+                await begin_camera_trace(page)
                 touch = await Touch.create(page)
                 await page.touchscreen.tap(touch.x, touch.y)
                 await wait(page, 's.position.y > .15')
@@ -395,12 +437,15 @@ async def main():
                     await wait(page, 's.taut && s.bossReady')
                     await touch.hold()
                 await wait(page, 's.canalOpen')
+                await wait(page, 's.position.y>6')
+                await capture(page, 'portrait-launch-arc')
                 await wait(page, 's.grounded && s.position.z > 63')
                 await check('portrait one-thumb launch/landing', page)
                 await touch.move(68)
                 await wait(page, 's.won')
                 await capture(page, 'portrait-win')
                 await check('portrait full one-thumb completion', page)
+                await check_camera_trace(page)
                 await page.locator('#again').tap()
                 await wait(page, '!s.won && s.checkpoint === 0 && s.coins === 0')
                 await check('portrait restart clears collectibles', page)
@@ -451,8 +496,8 @@ async def main():
                 await wait(page, f's.position.z > {before + 0.4}')
                 await touch.send('touchCancel')
                 await check('portrait blur pause and resumed input', page)
-                report['portrait_overflow'] = await page.evaluate('({x:document.documentElement.scrollWidth-innerWidth,y:document.documentElement.scrollHeight-innerHeight})')
-                assert report['portrait_overflow'] == {'x': 0, 'y': 0}, 'portrait document overflow'
+                report['mobile_overflow'] = await page.evaluate('({x:document.documentElement.scrollWidth-innerWidth,y:document.documentElement.scrollHeight-innerHeight})')
+                assert report['mobile_overflow'] == {'x': 0, 'y': 0}, 'mobile document overflow'
             await browser.close()
             assert not report['errors'], report['errors']
             assert not report['failed_http'], report['failed_http']

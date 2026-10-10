@@ -18,6 +18,7 @@ OUT = Path(os.environ.get('BAINHA_ARTIFACTS', '/workspace/onboarding/bainha-cont
 OUT.mkdir(parents=True, exist_ok=True)
 report = {'url': URL if not HTML_FILE else 'about:blank', 'html_file': HTML_FILE,
     'load_method': 'exact offline HTML content fixture' if HTML_FILE else 'HTTP navigation',
+    'mapping': '2.5D +Z projects right; X fixed at zero; W/Up/Space jump',
     'quality': 'low selected through the player-facing pause menu',
     'gamepad_method': 'navigator.getGamepads input-provider stub; no physical gamepad tested',
     'checks': [], 'screenshots': [], 'errors': [], 'failed_http': [], 'requests': []}
@@ -134,7 +135,7 @@ async def keyboard_direction(page, key, axis, sign, viewport):
     dz=after['position']['z']-before['position']['z']
     yaw=after['render']['animation']['yaw']
     facing_dot=(math.sin(yaw)*dx+math.cos(yaw)*dz)/math.hypot(dx,dz)
-    await check(f'keyboard {key} moves the correct screen direction', delta[axis]*sign>6 and facing_dot>0,
+    await check(f'keyboard {key} moves the correct screen direction', delta[axis]*sign>6 and facing_dot>0 and abs(after['position']['x'])<.001,
         {'projected_delta_px':delta,'expected_axis':axis,'expected_sign':sign,'facing_dot_travel':facing_dot,'deaths':after['deaths']})
     assert after['deaths']==before['deaths']
 
@@ -149,9 +150,45 @@ async def gamepad_direction(page, axes, axis, sign, viewport):
     await settle(page)
     after = await snapshot(page)
     delta = screen_delta(before,after,viewport)
-    await check(f'emulated gamepad axes {axes[:2]} move the correct screen direction',delta[axis]*sign>6,
+    await check(f'emulated gamepad axes {axes[:2]} move the correct screen direction',delta[axis]*sign>6 and abs(after['position']['x'])<.001,
         {'projected_delta_px':delta,'method':report['gamepad_method']})
     assert after['deaths']==before['deaths']
+
+async def keyboard_jump(page,key,viewport):
+    await restart(page)
+    before=await snapshot(page)
+    await page.keyboard.press(key)
+    await until(page,'!s.grounded && s.position.y>.35')
+    airborne=await snapshot(page)
+    delta=screen_delta(before,airborne,viewport)
+    await settle(page)
+    after=await snapshot(page)
+    await check(f'keyboard {key} jumps upward without depth movement',
+        delta['y'] < -8 and abs(airborne['position']['x'])<.001
+        and abs(after['position']['z']-before['position']['z'])<.01,
+        {'projected_delta_px':delta,'position':airborne['position']})
+
+async def ignored_depth_inputs(page):
+    await restart(page)
+    before=await snapshot(page)
+    for key in ('s','ArrowDown'):
+        await page.keyboard.down(key)
+    await until(page,f's.elapsed>{before["elapsed"]+.4}')
+    for key in ('s','ArrowDown'):
+        await page.keyboard.up(key)
+    after=await snapshot(page)
+    await check('S and Down do not move the player out of the 2.5D plane',
+        math.dist(before['position'].values(),after['position'].values())<.01,
+        {'before':before['position'],'after':after['position']})
+    for axis in (-1,1):
+        before=await snapshot(page)
+        await page.evaluate('(axis)=>{window.__QA_GAMEPAD_INPUT__.axes=[0,axis,0,0];window.__QA_GAMEPAD_INPUT__.active=true;}',axis)
+        await until(page,f's.elapsed>{before["elapsed"]+.4}')
+        await page.evaluate('window.__QA_GAMEPAD_INPUT__.active=false')
+        after=await snapshot(page)
+        await check(f'emulated gamepad vertical axis {axis} introduces no depth movement',
+            math.dist(before['position'].values(),after['position'].values())<.01,
+            {'before':before['position'],'after':after['position']})
 
 async def animations(page):
     await restart(page)
@@ -237,13 +274,15 @@ async def touch_direction(page, cdp, sign, viewport):
         await wait_displacement(page,before['position'])
         during=await snapshot(page)
         knob=await page.locator('#joystick-knob').evaluate('(el)=>new DOMMatrixReadOnly(getComputedStyle(el).transform).m41')
-        await capture(page,'portrait-drag-'+('right' if sign>0 else 'left'))
+        # Release input beside capture so slow screenshots cannot walk off the ledge.
+        shot=asyncio.create_task(capture(page,'portrait-drag-'+('right' if sign>0 else 'left')))
     finally:
         await cdp.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
+    await shot
     await settle(page)
     delta=screen_delta(before,during,viewport)
     await check('portrait '+('right' if sign>0 else 'left')+' drag moves player and joystick in the same screen direction',
-        delta['x']*sign>6 and knob*sign>10,
+        delta['x']*sign>6 and knob*sign>10 and abs(during['position']['x'])<.001,
         {'projected_delta_px':delta,'joystick_translate_x':knob})
     assert (await snapshot(page))['deaths']==before['deaths']
 
@@ -253,17 +292,21 @@ async def main():
         async with async_playwright() as p:
             browser=await p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,
                 args=['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'])
-            viewport={'width':1280,'height':800}
+            viewport={'width':1280,'height':720}
             desktop=await browser.new_context(viewport=viewport,device_scale_factor=1)
             page=await desktop.new_page()
             await observe(page)
+            await capture(page,'desktop-final-1280x720')
             # Install after navigation/set_content. This changes only the
             # input provider; no game state or diagnostics are changed.
             await page.evaluate(GAMEPAD_INPUT)
-            for key,axis,sign in [('ArrowRight','x',1),('ArrowLeft','x',-1),('ArrowUp','y',-1),('ArrowDown','y',1),('d','x',1),('a','x',-1),('w','y',-1),('s','y',1)]:
+            for key,axis,sign in [('ArrowRight','x',1),('ArrowLeft','x',-1),('d','x',1),('a','x',-1)]:
                 await keyboard_direction(page,key,axis,sign,viewport)
-            for axes,axis,sign in [([1,0,0,0],'x',1),([-1,0,0,0],'x',-1),([0,-1,0,0],'y',-1),([0,1,0,0],'y',1)]:
+            for axes,axis,sign in [([1,0,0,0],'x',1),([-1,0,0,0],'x',-1)]:
                 await gamepad_direction(page,axes,axis,sign,viewport)
+            for key in ('w','ArrowUp','Space'):
+                await keyboard_jump(page,key,viewport)
+            await ignored_depth_inputs(page)
             await animations(page)
             await desktop.close()
 
@@ -276,6 +319,12 @@ async def main():
             await touch_direction(page,cdp,-1,viewport)
             overflow=await page.evaluate('({x:document.documentElement.scrollWidth-innerWidth,y:document.documentElement.scrollHeight-innerHeight})')
             await check('portrait controls have no document overflow',overflow=={'x':0,'y':0},overflow)
+            for width,height in ((844,390),(568,320)):
+                await page.set_viewport_size({'width':width,'height':height})
+                await restart(page)
+                await capture(page,f'landscape-{width}x{height}')
+                boxes=await page.locator('#pause,#jump,#action,#touch-zone').evaluate_all('(els)=>els.map(el=>{const r=el.getBoundingClientRect();return {id:el.id,x:r.x,y:r.y,right:r.right,bottom:r.bottom}})')
+                await check(f'landscape {width}x{height} controls stay visible',all(b['x']>=0 and b['y']>=0 and b['right']<=width and b['bottom']<=height for b in boxes),boxes)
             assert not report['errors'],report['errors']
             assert not report['failed_http'],report['failed_http']
             if HTML_FILE:
