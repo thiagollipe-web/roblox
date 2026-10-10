@@ -2,15 +2,16 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { PLATFORMS, PAIRS, ribbonPoints, COLLECTIBLES, LANDMARKS, GATE_WIDTHS, type GameState, type Vec3 } from './game';
+import { createQualityController, type QualityMode } from './quality';
 
-type QualityMode = 'auto' | 'high' | 'low';
 type RenderOptions = { dt: number; elapsed: number; started: boolean; aiming: boolean; position?: Vec3; frameMs?: number };
 
 /** Presentation only: all contacts, pickups and puzzle rules belong to game.ts. */
 export function createView(container: HTMLElement) {
   const touch = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
+  const qualityController = createQualityController();
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, touch ? 1.25 : 1.5));
+  renderer.setPixelRatio(qualityController.pixelRatio(container.clientWidth || innerWidth, container.clientHeight || innerHeight, devicePixelRatio, touch));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -37,7 +38,7 @@ export function createView(container: HTMLElement) {
   const camera = new THREE.OrthographicCamera(-11, 11, 6, -6, .1, 180);
   camera.position.set(-28, 7.6, 3.2); camera.lookAt(0, 2, 3.2);
   const light = new THREE.DirectionalLight('#fff4d6', 3.3);
-  light.castShadow = true;
+  light.castShadow = false;
   light.shadow.mapSize.set(touch ? 1024 : 2048, touch ? 1024 : 2048);
   light.shadow.camera.left = -20; light.shadow.camera.right = 20;
   light.shadow.camera.top = 24; light.shadow.camera.bottom = -24;
@@ -169,6 +170,15 @@ export function createView(container: HTMLElement) {
   }
   const trees: { base: THREE.Matrix4; near: boolean }[] = [];
   let backgroundTravel = 0;
+  // InstancedMesh bounds cover the whole level, so renderer frustum culling
+  // alone still submits every instance. Pack only a conservative camera window
+  // into the existing buffers; capacities and authored assets never change.
+  let visibleMinZ = -Infinity, visibleMaxZ = Infinity;
+  function inView(z: number, radius: number) { return z + radius >= visibleMinZ && z - radius <= visibleMaxZ; }
+  function finishInstances(batch: THREE.InstancedMesh, count: number) {
+    batch.count = count; batch.visible = count > 0;
+    if (count > 0) batch.instanceMatrix.needsUpdate = true;
+  }
   function tree(x: number, y: number, z: number, scale: number, near = true) {
     object.position.set(x, y, z); object.rotation.set(0, 0, 0); object.scale.setScalar(scale); object.updateMatrix();
     trees.push({ base: object.matrix.clone(), near });
@@ -221,26 +231,36 @@ export function createView(container: HTMLElement) {
   for (const zone of terrainZones.values()) { shadows(zone); batchRigid(zone); }
   const flowerDots = new THREE.InstancedMesh(detailGeometry, pink, flowers.length * 4);
   const flowerCenters = new THREE.InstancedMesh(detailGeometry, gold, flowers.length);
-  const flowerTint = new THREE.Color();
+  const flowerTint = new THREE.Color(), flowerColors = new Float32Array(flowers.length * 3);
+  const flowerSlots = new Int16Array(flowers.length).fill(-1);
   flowers.forEach((_flower, i) => {
     flowerTint.set(i % 3 === 0 ? '#fff7ec' : i % 3 === 1 ? '#ffc9de' : '#ffe6f0');
-    for (let j = 0; j < 4; j++) flowerDots.setColorAt(i * 4 + j, flowerTint);
+    flowerTint.toArray(flowerColors, i * 3);
   });
   flowerDots.instanceMatrix.setUsage(THREE.DynamicDrawUsage); flowerCenters.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   const petalDirections = [1, 0, 0, 1, -1, 0, 0, -1];
   function updateFlowers(t: number) {
+    let count = 0, colorDirty = false;
     flowers.forEach((f, i) => {
+      if (!inView(f.z, .4)) return;
       const breeze = Math.sin(t * 2.1 + f.z * .45 + f.x * .28);
       const x = f.x + breeze * .045, y = f.y + .015 + Math.abs(breeze) * .025;
       object.rotation.set(breeze * .13, 0, breeze * .08);
+      if (flowerSlots[count] !== i) {
+        flowerTint.fromArray(flowerColors, i * 3);
+        for (let j = 0; j < 4; j++) flowerDots.setColorAt(count * 4 + j, flowerTint);
+        flowerSlots[count] = i; colorDirty = true;
+      }
       for (let j = 0; j < 4; j++) {
         const dx = petalDirections[j * 2], dz = petalDirections[j * 2 + 1];
         object.position.set(x + dx * f.s, y + (dx - dz) * breeze * f.s * .13, f.z + dz * f.s);
-        object.scale.set(f.s, f.s * .52, f.s); object.updateMatrix(); flowerDots.setMatrixAt(i * 4 + j, object.matrix);
+        object.scale.set(f.s, f.s * .52, f.s); object.updateMatrix(); flowerDots.setMatrixAt(count * 4 + j, object.matrix);
       }
-      object.position.set(x, y + .045, f.z); object.scale.setScalar(f.s * .65); object.updateMatrix(); flowerCenters.setMatrixAt(i, object.matrix);
+      object.position.set(x, y + .045, f.z); object.scale.setScalar(f.s * .65); object.updateMatrix(); flowerCenters.setMatrixAt(count, object.matrix);
+      count++;
     });
-    flowerDots.instanceMatrix.needsUpdate = true; flowerCenters.instanceMatrix.needsUpdate = true;
+    finishInstances(flowerDots, count * 4); finishInstances(flowerCenters, count);
+    if (colorDirty && flowerDots.instanceColor) flowerDots.instanceColor.needsUpdate = true;
   }
   updateFlowers(0);
   // Bounds include the small breeze excursion without recomputing them each frame.
@@ -259,6 +279,8 @@ export function createView(container: HTMLElement) {
   }
   hillGeometry.setAttribute('color', new THREE.BufferAttribute(hillColors, 3));
   const hills = new THREE.InstancedMesh(hillGeometry, new THREE.MeshLambertMaterial({ vertexColors: true, color: '#ffffff' }), 18);
+  hills.frustumCulled = false;
+  const hillMatrices: THREE.Matrix4[] = [], hillRadii: number[] = [];
   scene.add(hills);
   for (let i = 0; i < 18; i++) {
     // Orthographic scenery does not shrink with distance. Keep the far hills
@@ -267,8 +289,20 @@ export function createView(container: HTMLElement) {
     const x = 20 + (i % 2) * 17 + (i % 3) * 2, z = i * 7 - 14;
     const h = 3.2 + (i % 4) * .6, y = -3 - x * .2;
     object.position.set(x, y, z); object.rotation.set(0, 0, 0); object.scale.set(6 + i % 3, h, 5.5 + i % 2); object.updateMatrix();
-    hills.setMatrixAt(i, object.matrix);
+    hills.setMatrixAt(i, object.matrix); hillMatrices.push(object.matrix.clone()); hillRadii.push(5.5 + i % 2);
     if (i % 4 === 0) tree(x, y + h, z, .35, false);
+  }
+  // Hills only need buffer writes when the camera window gains or loses a hill.
+  const hillSlots = new Int16Array(hillMatrices.length).fill(-1);
+  function updateHills() {
+    let count = 0, dirty = false;
+    hillMatrices.forEach((matrix, i) => {
+      if (!inView(matrix.elements[14] + backgroundTravel * .14, hillRadii[i])) return;
+      if (hillSlots[count] !== i) { hills.setMatrixAt(count, matrix); hillSlots[count] = i; dirty = true; }
+      count++;
+    });
+    hills.count = count; hills.visible = count > 0;
+    if (dirty) hills.instanceMatrix.needsUpdate = true;
   }
   // All crowns move through instance matrices: wind adds no per-tree draw calls.
   const treeParts = [
@@ -293,28 +327,44 @@ export function createView(container: HTMLElement) {
     const instances = new THREE.InstancedMesh(bucket.geometry, bucket.material, bucket.parts.length);
     instances.castShadow = bucket.near && bucket.material !== coral; instances.receiveShadow = bucket.near;
     instances.instanceMatrix.setUsage(THREE.DynamicDrawUsage); instances.frustumCulled = false;
-    if (bucket.material === leaf || bucket.material === leafLight) {
+    const tints = bucket.material === leaf || bucket.material === leafLight ? new Float32Array(bucket.parts.length * 3) : null;
+    if (tints) {
       const tint = new THREE.Color();
       bucket.parts.forEach((part, index) => {
         tint.setRGB(.9 + (part.tree % 3) * .05, .96 + (part.tree % 2) * .04, .87 + (part.tree % 4) * .035);
-        instances.setColorAt(index, tint);
+        tint.toArray(tints, index * 3);
       });
     }
-    scene.add(instances); return { ...bucket, instances };
+    scene.add(instances); return { ...bucket, instances, tints, slots: new Int16Array(bucket.parts.length).fill(-1) };
   });
   const crownMatrices = trees.map(() => new THREE.Matrix4()), instanceMatrix = new THREE.Matrix4();
+  const activeTrees = new Uint8Array(trees.length), treeTint = new THREE.Color();
+  let diagnosticTree = 0;
   function updateTrees(t: number) {
+    let foundTree = false;
     trees.forEach((tree, index) => {
+      const z = tree.base.elements[14] + (tree.near ? 0 : backgroundTravel * .14);
+      activeTrees[index] = inView(z, tree.near ? 1.5 : .8) ? 1 : 0;
+      if (!activeTrees[index]) return;
+      if (!foundTree) { diagnosticTree = index; foundTree = true; }
       const breeze = Math.sin(t * 1.35 + index * .6) * .055 + Math.sin(t * 2.7 + index * .35) * .01;
       const crown = crownMatrices[index]; crown.makeRotationZ(breeze); crown.setPosition(0, 1.9, 0); crown.premultiply(tree.base);
     });
     for (const batch of treeBatches) {
+      let count = 0, colorDirty = false;
       batch.parts.forEach((part, index) => {
+        if (!activeTrees[part.tree]) return;
         instanceMatrix.multiplyMatrices(part.crown ? crownMatrices[part.tree] : trees[part.tree].base, part.local);
         if (!trees[part.tree].near) instanceMatrix.elements[14] += backgroundTravel * .14;
-        batch.instances.setMatrixAt(index, instanceMatrix);
+        batch.instances.setMatrixAt(count, instanceMatrix);
+        if (batch.tints && batch.slots[count] !== index) {
+          treeTint.fromArray(batch.tints, index * 3); batch.instances.setColorAt(count, treeTint);
+          batch.slots[count] = index; colorDirty = true;
+        }
+        count++;
       });
-      batch.instances.instanceMatrix.needsUpdate = true;
+      finishInstances(batch.instances, count);
+      if (colorDirty && batch.instances.instanceColor) batch.instances.instanceColor.needsUpdate = true;
     }
   }
   updateTrees(0);
@@ -330,11 +380,15 @@ export function createView(container: HTMLElement) {
   const clouds = new THREE.InstancedMesh(sphereGeometry, cloudMaterial, cloudParts.length);
   clouds.instanceMatrix.setUsage(THREE.DynamicDrawUsage); clouds.frustumCulled = false; scene.add(clouds);
   function updateClouds(t: number) {
-    cloudParts.forEach((c, i) => {
+    let count = 0;
+    cloudParts.forEach(c => {
+      // Include each lobe's maximum drift, so the whole cloud is present before
+      // it reaches the visible edge even while its parallax layer moves.
+      if (!inView(c.z + backgroundTravel * .27, c.sz + 2.2)) return;
       object.position.set(c.x + Math.sin(t * .13 + c.phase) * .65, c.y + Math.sin(t * .6 + c.phase) * .16, c.z + Math.sin(t * .13 + c.phase) * 2.2); object.rotation.set(0, 0, 0);
-      object.scale.set(c.sx, c.sy, c.sz); object.updateMatrix(); clouds.setMatrixAt(i, object.matrix);
+      object.scale.set(c.sx, c.sy, c.sz); object.updateMatrix(); clouds.setMatrixAt(count++, object.matrix);
     });
-    clouds.instanceMatrix.needsUpdate = true;
+    finishInstances(clouds, count);
   }
   updateClouds(0);
   const sun = sphere(62, -5.8, 21, 2.1, 2.1, 2.1, new THREE.MeshBasicMaterial({color:'#fff4ac',fog:false})); sun.castShadow = false;
@@ -394,7 +448,7 @@ export function createView(container: HTMLElement) {
   shadowGradient.addColorStop(0, 'rgba(32,59,49,.4)'); shadowGradient.addColorStop(.55, 'rgba(32,59,49,.19)'); shadowGradient.addColorStop(1, 'rgba(32,59,49,0)');
   shadowContext.fillStyle = shadowGradient; shadowContext.fillRect(0, 0, 32, 32);
   const shadowTexture = new THREE.CanvasTexture(shadowCanvas); shadowTexture.colorSpace = THREE.SRGBColorSpace;
-  const shadow = mesh(new THREE.PlaneGeometry(1.55, 1.55), new THREE.MeshBasicMaterial({map: shadowTexture, transparent:true, opacity:.8, depthWrite:false}), 0, .12, 0);
+  const shadow = mesh(new THREE.PlaneGeometry(1.55, 1.55), new THREE.MeshBasicMaterial({map: shadowTexture, transparent:true, opacity:1, depthWrite:false}), 0, .12, 0);
   shadow.rotation.x = -Math.PI / 2; shadow.castShadow = false; shadow.receiveShadow = false;
 
   function instances(geometry: THREE.BufferGeometry, material: THREE.Material, count: number) {
@@ -414,39 +468,43 @@ export function createView(container: HTMLElement) {
     specialBodies: instances(spoolBodyGeometry, blue, specialCount), specialRims: instances(spoolRimGeometry, cyan, specialCount),
     stitches: instances(stitchGeometry, cream, COLLECTIBLES.length), orbits: instances(orbitGeometry, glow, specialCount),
   };
-  const pickupBatchList = Object.values(pickupBatches);
-  let regularIndex = 0, specialIndex = 0;
-  const pickups = COLLECTIBLES.map((c, index) => ({ c, index, batchIndex: c.special ? specialIndex++ : regularIndex++, collected: false, pop: 0 }));
+  const pickups = COLLECTIBLES.map(c => ({ c, collected: false, pop: 0 }));
   function updatePickups(s: GameState | null, t: number, dt: number) {
+    let regular = 0, special = 0, stitches = 0;
     pickups.forEach((item, i) => {
       const collected = s?.collected.includes(item.c.id) ?? false;
       if (collected && !item.collected) item.pop = .38;
       if (!collected) item.pop = 0;
       item.collected = collected; item.pop = Math.max(0, item.pop - dt);
+      if ((collected && item.pop <= 0) || !inView(item.c.position.z, .8)) return;
       object.position.set(item.c.position.x, item.c.position.y + Math.sin(t * 3.5 + i * .7) * .18 + (collected ? (1 - item.pop / .38) * 1.15 : 0), item.c.position.z);
       object.rotation.set(Math.sin(t * 2.5 + i) * .08, t * 2.8 + i * .7, Math.sin(t * 2 + i) * .18);
       object.scale.setScalar((item.c.special ? .34 : .2) * (collected ? item.pop / .38 : 1)); object.updateMatrix();
-      (item.c.special ? pickupBatches.specialBodies : pickupBatches.bodies).setMatrixAt(item.batchIndex, object.matrix);
-      (item.c.special ? pickupBatches.specialRims : pickupBatches.rims).setMatrixAt(item.batchIndex, object.matrix);
-      pickupBatches.stitches.setMatrixAt(item.index, object.matrix);
-      if (item.c.special) pickupBatches.orbits.setMatrixAt(item.batchIndex, object.matrix);
+      const slot = item.c.special ? special++ : regular++;
+      (item.c.special ? pickupBatches.specialBodies : pickupBatches.bodies).setMatrixAt(slot, object.matrix);
+      (item.c.special ? pickupBatches.specialRims : pickupBatches.rims).setMatrixAt(slot, object.matrix);
+      pickupBatches.stitches.setMatrixAt(stitches++, object.matrix);
+      if (item.c.special) pickupBatches.orbits.setMatrixAt(slot, object.matrix);
     });
-    pickupBatchList.forEach(batch => { batch.instanceMatrix.needsUpdate = true; });
+    finishInstances(pickupBatches.bodies, regular); finishInstances(pickupBatches.rims, regular);
+    finishInstances(pickupBatches.specialBodies, special); finishInstances(pickupBatches.specialRims, special);
+    finishInstances(pickupBatches.stitches, stitches); finishInstances(pickupBatches.orbits, special);
   }
   updatePickups(null, 0, 0);
   const anchorPoints = PAIRS.flatMap(pair => [pair.a, pair.b]);
   const anchorBases = instances(cylinderGeometry, cream, anchorPoints.length);
   const anchorRings = instances(torusGeometry, gold, anchorPoints.length);
   const anchorCenters = instances(detailGeometry, glow, anchorPoints.length);
-  anchorPoints.forEach((point, i) => {
-    object.position.set(point.x, point.y + .06, point.z); object.rotation.set(0, 0, 0); object.scale.set(.48, .16, .48); object.updateMatrix(); anchorBases.setMatrixAt(i, object.matrix);
-    object.position.y = point.y + .54; object.scale.setScalar(.1); object.updateMatrix(); anchorCenters.setMatrixAt(i, object.matrix);
-  });
   function updateAnchors(t: number) {
+    let count = 0;
     anchorPoints.forEach((point, i) => {
-      object.position.set(point.x, point.y + .54, point.z); object.rotation.set(0, Math.PI / 2 + Math.sin(t * 2 + i) * .18, 0); object.scale.setScalar(.34); object.updateMatrix(); anchorRings.setMatrixAt(i, object.matrix);
+      if (!inView(point.z, .55)) return;
+      object.position.set(point.x, point.y + .06, point.z); object.rotation.set(0, 0, 0); object.scale.set(.48, .16, .48); object.updateMatrix(); anchorBases.setMatrixAt(count, object.matrix);
+      object.position.y = point.y + .54; object.scale.setScalar(.1); object.updateMatrix(); anchorCenters.setMatrixAt(count, object.matrix);
+      object.rotation.set(0, Math.PI / 2 + Math.sin(t * 2 + i) * .18, 0); object.scale.setScalar(.34); object.updateMatrix(); anchorRings.setMatrixAt(count, object.matrix);
+      count++;
     });
-    anchorRings.instanceMatrix.needsUpdate = true;
+    finishInstances(anchorBases, count); finishInstances(anchorCenters, count); finishInstances(anchorRings, count);
   }
   updateAnchors(0);
   const launch = new THREE.Group(); launch.position.set(LANDMARKS.launch.x, LANDMARKS.launch.y + .09, LANDMARKS.launch.z); scene.add(launch);
@@ -590,8 +648,8 @@ export function createView(container: HTMLElement) {
   const cameraLook = new THREE.Vector3(), cameraDesired=new THREE.Vector3(),lookDesired=new THREE.Vector3();
   let cameraBaseY = 0, cameraLead = 3.2;
   const diagnosticProjection = new THREE.Matrix4();
-  let quality: QualityMode = 'auto', effectiveQuality: 'high' | 'low' = 'high';
-  let renderedFrames = 0, qualityChanges = 0, frameTimeMs = 16.67, warmupTime = 0, slowTime = 0;
+  let effectiveQuality: 'high' | 'low' = 'low';
+  let renderedFrames = 0;
   let portrait=false;
   function resize() {
     const w = container.clientWidth || innerWidth, h = container.clientHeight || innerHeight, aspect = w / h;
@@ -599,6 +657,7 @@ export function createView(container: HTMLElement) {
     // Never crop an upcoming jump in a narrow window; landscape remains the
     // primary composition, with the character at a comfortable readable size.
     const height = Math.max(11.8, 14 / aspect), width = height * aspect;
+    renderer.setPixelRatio(qualityController.pixelRatio(w, h, devicePixelRatio, touch));
     renderer.setSize(w, h);
     camera.left = -width / 2; camera.right = width / 2;
     camera.top = height / 2; camera.bottom = -height / 2;
@@ -617,10 +676,10 @@ export function createView(container: HTMLElement) {
     // it dirty selects the already compiled program and refreshes its uniforms.
     for (const material of sceneMaterials) material.needsUpdate = true;
   }
-  function applyQuality(level: 'high' | 'low') {
-    if (effectiveQuality !== level) qualityChanges++;
+  function applyQuality() {
+    const level = qualityController.snapshot().level;
     effectiveQuality = level;
-    const ratio = Math.min(devicePixelRatio, level === 'low' ? 1 : touch ? 1.25 : 1.5);
+    const ratio = qualityController.pixelRatio(container.clientWidth || innerWidth, container.clientHeight || innerHeight, devicePixelRatio, touch);
     if (renderer.getPixelRatio() !== ratio) renderer.setPixelRatio(ratio);
     const cast = level === 'high';
     if (light.castShadow !== cast) { light.castShadow = cast; refreshShadowMaterials(); }
@@ -628,27 +687,21 @@ export function createView(container: HTMLElement) {
     (shadow.material as THREE.MeshBasicMaterial).opacity = level === 'low' ? 1 : .8;
   }
   function setQuality(mode: QualityMode) {
-    quality = mode; warmupTime = 0; slowTime = 0; frameTimeMs = 16.67;
-    applyQuality(mode === 'low' ? 'low' : 'high');
+    qualityController.setMode(mode); applyQuality();
   }
   function observeFrame(options: RenderOptions) {
-    if (!options.started || options.dt <= 0) return;
     const sample = options.frameMs ?? options.dt * 1000;
-    if (!Number.isFinite(sample) || sample <= 0) return;
-    // Ignore isolated tab/startup stalls; sustained slow frames lower quality only once.
-    const seconds = Math.min(sample, 250) / 1000;
-    frameTimeMs += (Math.min(sample, 250) - frameTimeMs) * .08;
-    warmupTime += seconds;
-    if (quality !== 'auto' || effectiveQuality === 'low' || warmupTime < 2.5) return;
-    if (frameTimeMs > 29) slowTime += seconds;
-    else if (frameTimeMs < 23) slowTime = Math.max(0, slowTime - seconds * 2);
-    if (slowTime > 1.75) applyQuality('low');
+    if (qualityController.observe(sample, options.started && options.dt > 0)) applyQuality();
   }
   function diagnostics() {
     diagnosticProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    const qualityState = qualityController.snapshot();
     return Object.freeze({ drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles,
-      pixelRatio: renderer.getPixelRatio(), quality, effectiveQuality, shadowMode: effectiveQuality === 'high' ? 'dynamic' : 'blob',
-      renderedFrames, frameTimeMs: Math.round(frameTimeMs * 100) / 100, qualityChanges, geometryCount: renderer.info.memory.geometries,
+      pixelRatio: renderer.getPixelRatio(), quality: qualityState.mode, effectiveQuality, shadowMode: effectiveQuality === 'high' ? 'dynamic' : 'blob',
+      resolutionScale: qualityState.resolutionScale, drawingWidth: renderer.domElement.width, drawingHeight: renderer.domElement.height,
+      renderedFrames, frameTimeMs: Math.round(qualityState.frameTimeMs * 100) / 100, qualityChanges: qualityState.changes, geometryCount: renderer.info.memory.geometries,
+      submittedInstances: { trees: activeTrees.reduce((sum, active) => sum + active, 0), cloudParts: clouds.count,
+        hills: hills.count, flowers: flowerCenters.count, pickups: pickupBatches.stitches.count, anchors: anchorRings.count },
       camera: { mode: 'side-2.5d', viewProjection: diagnosticProjection.toArray(), position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
         visibleWidth: camera.right - camera.left, visibleHeight: camera.top - camera.bottom,
         hero: { x: player.position.x, y: player.position.y, z: player.position.z } },
@@ -656,7 +709,7 @@ export function createView(container: HTMLElement) {
         rig: { leftLegX: limbs[0].rotation.x, rightLegX: limbs[2].rotation.x, leftArmX: limbs[1].rotation.x, rightArmX: limbs[3].rotation.x,
           leftArmZ: limbs[1].rotation.z, rightArmZ: limbs[3].rotation.z, bodyY: avatar.position.y, bodyRoll: avatar.rotation.z,
           bodyScaleY: avatar.scale.y, scarfX: scarf.rotation.x },
-        ambient: { treeSway: Math.atan2(crownMatrices[0].elements[1], crownMatrices[0].elements[0]), cloudX: clouds.instanceMatrix.array[12],
+        ambient: { treeSway: Math.atan2(crownMatrices[diagnosticTree].elements[1], crownMatrices[diagnosticTree].elements[0]), cloudX: clouds.instanceMatrix.array[12],
           flowerY: flowerCenters.instanceMatrix.array[13], coinY: pickupBatches.bodies.instanceMatrix.array[13], guardianRoll: flower.rotation.z } },
     });
   }
@@ -746,6 +799,26 @@ export function createView(container: HTMLElement) {
       }
     }
     shadow.visible=floor>-7;shadow.position.set(p.x,floor+.08,p.z);shadow.scale.setScalar(Math.max(.5,1-(p.y-floor)*.07));
+    // Track the horizontal route smoothly. Ordinary jumps stay in a vertical
+    // deadzone; taller launch arcs move the frame only when they need more room.
+    // A falling character cannot drag the camera down and hide their respawn ledge.
+    const followY = Math.max(0, p.y);
+    if (firstFrame) { cameraBaseY = followY; cameraLead = 3.2; }
+    const leadTarget = started ? THREE.MathUtils.clamp(1.6 + s.velocity.z * .35, -1.5, 3.8) : 3.2;
+    cameraLead += (leadTarget - cameraLead) * (1 - Math.exp(-dt * 3.5));
+    const baseTarget = s.grounded ? followY : THREE.MathUtils.clamp(cameraBaseY, followY - 3.0, followY + 1.4);
+    cameraBaseY += (Math.max(0, baseTarget) - cameraBaseY) * (1 - Math.exp(-dt * (s.grounded ? 4 : 2.5)));
+    const focusZ = started ? p.z + cameraLead : 3.2;
+    const focusY = (started ? cameraBaseY : 0) + (portrait ? 2.5 : 2);
+    lookDesired.set(0, focusY, focusZ);
+    cameraDesired.set(-28, focusY + 5.6, focusZ);
+    const smoothing=firstFrame?1:1-Math.exp(-dt*7);camera.position.lerp(cameraDesired,smoothing);cameraLook.lerp(lookDesired,smoothing);camera.lookAt(cameraLook);firstFrame=false;
+    // High quality also retains off-screen tree casters whose shadows can reach
+    // the frame. Low quality needs only a smaller visual overscan margin.
+    const overscan = effectiveQuality === 'high' ? 5 : 2.5;
+    visibleMinZ = camera.position.z + camera.left - overscan;
+    visibleMaxZ = camera.position.z + camera.right + overscan;
+    updateHills();
     updatePickups(s,t,dt); updateTrees(t); updateClouds(t); updateAnchors(t); updateFlowers(t);
     enemy.position.set(s.enemy==='captured'?cage.position.x:LANDMARKS.enemy.x+(s.enemy==='warning'?Math.sin(t*26)*.08:Math.sin(t*1.8)*.32),LANDMARKS.enemy.y+(s.enemy==='captured'?.23+Math.abs(Math.sin(t*3))*.055:Math.abs(Math.sin(t*5))*.06),s.enemy==='captured'?cage.position.z:LANDMARKS.enemy.z);
     enemy.rotation.y = s.enemy === 'captured' ? Math.sin(t * 2) * .1 : Math.sin(t * 1.8) * .16;
@@ -785,20 +858,6 @@ export function createView(container: HTMLElement) {
     ribbonMaterial.emissiveIntensity = (s.taut ? .28 : .07) + Math.max(0, 1 - pulseAge / .45) * .75;
     confetti.visible=s.won;
     if(s.won){for(let i=0;i<80;i++){const time=(t*.6+i*.077)%1;object.position.set(p.x+Math.sin(i*17.13)*4,p.y+7-time*7,p.z+Math.cos(i*3.72)*4);object.rotation.set(t+i,t*.7+i, t*2+i);object.scale.set(.12,.055,.2);object.updateMatrix();confetti.setMatrixAt(i,object.matrix);}confetti.instanceMatrix.needsUpdate=true;}
-    // Track the horizontal route smoothly. Ordinary jumps stay in a vertical
-    // deadzone; taller launch arcs move the frame only when they need more room.
-    // A falling character cannot drag the camera down and hide their respawn ledge.
-    const followY = Math.max(0, p.y);
-    if (firstFrame) { cameraBaseY = followY; cameraLead = 3.2; }
-    const leadTarget = started ? THREE.MathUtils.clamp(1.6 + s.velocity.z * .35, -1.5, 3.8) : 3.2;
-    cameraLead += (leadTarget - cameraLead) * (1 - Math.exp(-dt * 3.5));
-    const baseTarget = s.grounded ? followY : THREE.MathUtils.clamp(cameraBaseY, followY - 3.0, followY + 1.4);
-    cameraBaseY += (Math.max(0, baseTarget) - cameraBaseY) * (1 - Math.exp(-dt * (s.grounded ? 4 : 2.5)));
-    const focusZ = started ? p.z + cameraLead : 3.2;
-    const focusY = (started ? cameraBaseY : 0) + (portrait ? 2.5 : 2);
-    lookDesired.set(0, focusY, focusZ);
-    cameraDesired.set(-28, focusY + 5.6, focusZ);
-    const smoothing=firstFrame?1:1-Math.exp(-dt*7);camera.position.lerp(cameraDesired,smoothing);cameraLook.lerp(lookDesired,smoothing);camera.lookAt(cameraLook);firstFrame=false;
     // Snap shadow tracking to a small world grid so subpixel motion does not crawl.
     const texel = 40 / light.shadow.mapSize.x;
     const shadowX = Math.round(p.x / texel) * texel, shadowZ = Math.round(p.z / texel) * texel;

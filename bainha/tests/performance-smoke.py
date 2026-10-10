@@ -174,7 +174,7 @@ async def main(args):
             'profiles':{}}
     async with async_playwright() as p:
         browser=await p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=FLAGS)
-        for name in ('desktop','portrait'):
+        for name in (('desktop','portrait') if args.device=='all' else (args.device,)):
             report['profiles'][name]=await profile(browser,name,args.url,output,args.quality)
             (output/'report.json').write_text(json.dumps(report,indent=2))
         await browser.close()
@@ -201,6 +201,7 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--label',required=True)
     parser.add_argument('--quality',choices=['auto','high','low'])
+    parser.add_argument('--device',choices=['all','desktop','portrait'],default='all',help='Limit the comparable workload to one viewport; default preserves both profiles')
     parser.add_argument('--compare',help='Optional baseline report.json; validates equal drawing buffer resolution')
     parser.add_argument('--url',required=True)
     parser.add_argument('--build-dir',required=True)

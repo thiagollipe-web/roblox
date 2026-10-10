@@ -20,9 +20,11 @@ Abra `../prototipo/BAINHA.html` com Chrome ou Edge. O HTML incorpora código, es
 
 ## Arte e fluidez
 
-O menu de pausa oferece **Gráficos → Automáticos / Mais detalhes / Mais desempenho**. O modo automático adapta a resolução quando o navegador fica lento por um período sustentado; o modo de desempenho reduz o custo de sombras e resolução. A preferência vale para a sessão atual.
+O menu de pausa oferece **Gráficos → Automáticos / Mais detalhes / Mais desempenho**. O automático começa com sombras simples e um orçamento de até 1280 × 720 pixels, mesmo em monitores grandes ou com alta densidade de pixels. Se a lentidão persistir, reduz a resolução em etapas, sem alterar a física, a câmera ou a nitidez da interface HTML. O modo Mais detalhes ativa sombras dinâmicas e um orçamento de até 1920 × 1080 pixels; Mais desempenho mantém sombras simples e resolução fixa dentro do orçamento menor. A preferência vale para a sessão atual.
 
 O cenário usa objetos repetidos em lotes, iluminação com sombras seletivas e geometrias de fita preparadas antecipadamente. A personagem balança braços e pernas na corrida, muda a postura no salto, comprime o corpo ao pousar e acena após um tempo em repouso. Árvores, flores, nuvens e coletáveis também se movimentam. Os shaders são preparados durante a abertura para reduzir engasgos na primeira interação.
+
+Os lotes de árvores, flores, nuvens, colinas, coletáveis e anéis enviam apenas as instâncias próximas à janela da câmera. A seleção considera a paralaxe, o tamanho dos objetos e uma margem fora do quadro, incluindo sombras próximas. Objetos distantes deixam de exigir atualizações de matrizes e voltam antes de entrar na tela; nenhum item é removido da simulação.
 
 A direção de arte combina um jardim de tecido com terra em camadas: bordas costuradas, pedras arredondadas, copas com variações de cor e uma trama procedural discreta nas roupas e fitas. As plataformas finas dos caminhos extras têm acabamento coral para diferenciá-las do chão sólido. Olhos, cabelo e mochila de Iri foram desenhados para continuar legíveis na câmera lateral. Todos esses detalhes são gerados no próprio jogo, sem baixar imagens ou modelos externos.
 
@@ -41,6 +43,7 @@ Quedas devolvem ao último apoio e preservam mecanismos já resolvidos. O menu d
 - `src/view.ts`: apresentação Three.js, geometria original, iluminação, animação e câmera automática. Malhas estáticas são agrupadas por material para reduzir chamadas de desenho.
 - `src/main.ts`: normalização das entradas, simulação em passos fixos de 1/60 s e interface DOM atualizada quando seu estado muda. A pausa suspende os desenhos WebGL.
 - `src/motion.ts`: interpola a posição visual entre passos da física para manter movimento contínuo em telas de diferentes frequências. Reinícios, quedas e mudanças de apoio redefinem a interpolação.
+- `src/quality.ts`: limita a quantidade de pixels renderizados e adapta a resolução após lentidão contínua, distinguindo pausas e travadas isoladas de uma sequência de quadros lentos.
 - `index.html` / `src/style.css`: interface responsiva em português, com área central livre para ver os pousos.
 - `scripts/standalone.mjs`: incorpora o build, estilos, física WASM e licenças em um HTML único, sem recursos externos.
 
